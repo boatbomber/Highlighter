@@ -53,7 +53,7 @@ local function highlight(Label: Instance, Src: string?)
 	end
 
 	local Formatted = table.concat(RichText)
-	if #Formatted <= 200000 then
+	if #Formatted <= 16300 then
 		Label.Text = Formatted
 	else
 		Label.Text = SanitizeTabs(SanitizeRichText(SanitizeUnicode(Src)))
