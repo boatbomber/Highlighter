@@ -53,7 +53,7 @@ local function highlight(Label: Instance, Src: string?)
 	end
 
 	local Formatted = table.concat(RichText)
-	if #Formatted <= 16300 then
+	if #Formatted <= 16384 then -- TextLabel.Text can only be 16 Kibibyte
 		Label.Text = Formatted
 	else
 		Label.Text = SanitizeTabs(SanitizeRichText(SanitizeUnicode(Src)))
