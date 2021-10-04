@@ -8,10 +8,13 @@
 		ryanjmulder <https://github.com/ryanjmulder> ------------- Penlight lexer contributer
 		mpeterv <https://github.com/mpeterv> --------------------- Penlight lexer contributer
 		Tieske <https://github.com/Tieske> ----------------------- Penlight lexer contributer
-		boatbomber <https://github.com/boatbomber> --------------- Roblox port, added builtin token, added patterns for incomplete syntax, bug fixes, behavior changes, token optimization
+		boatbomber <https://github.com/boatbomber> --------------- Roblox port, added builtin token,
+		                                                           added patterns for incomplete syntax, bug fixes,
+		                                                           behavior changes, token optimization, thread optimization
+		                                                           Added lexer.navigator() for non-sequential reads
 		Sleitnick <https://github.com/Sleitnick> ----------------- Roblox optimizations
 		howmanysmall <https://github.com/howmanysmall> ----------- Lua + Roblox optimizations
-		boatbomber <https://github.com/boatbomber> --------------- Added lexer.navigator() for non-sequential reads
+
 	List of possible tokens:
 		- iden
 		- keyword
