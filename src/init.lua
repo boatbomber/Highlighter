@@ -18,52 +18,102 @@ local function SanitizeTabs(s: string): string
 	return string.gsub(s, "\t", "    ")
 end
 
-local function SanitizeUnicode(s: string): string
-	local n = #s
-	local NewString = table.create(n)
-
-	local i = 0
-	for Index = 1, n do
-		local Byte = string.byte(s, Index)
-		if (Byte >= 32 and Byte <= 126) or (Byte == 9 or Byte == 10) then
-			i += 1
-			NewString[i] = string.sub(s, Index, Index)
-		end
-	end
-
-	return table.concat(NewString)
+local function SanitizeControl(s: string): string
+	return string.gsub(s, "[\0\1\2\3\4\5\6\7\8\11\12\13\14\15\16\17\18\19\20\21\22\23\24\25\26\27\28\29\30\31]+", "")
 end
 
-local function highlight(Label: Instance, Src: string?)
-	Src = Src or Label.Text
+local function highlight(textObject: Instance, src: string?)
+	src = SanitizeTabs(SanitizeControl(src or textObject.Text))
 
-	Label.TextColor3 = TokenColors.iden
+	textObject.RichText = false
+	textObject.Text = src
+	textObject.TextColor3 = TokenColors.iden
+	textObject.TextTransparency = 0.5
 
-	local RichText, Index = {}, 0
-	for token, src in Lexer.scan(Src) do
-		local Color = TokenColors[token] or TokenColors.iden
-		local sanitized = SanitizeTabs(SanitizeRichText(SanitizeUnicode(src)))
+	local textSize = textObject.TextSize
 
-		Index += 1
-		if Color ~= Label.TextColor then
-			RichText[Index] = string.format(TokenFormats[token], sanitized)
-		else
-			RichText[Index] = sanitized
+	local _, numLines = string.gsub(src, "\n", "")
+	numLines += 1
+
+	local lineLabels = ActiveLabels[textObject]
+	if not lineLabels then
+		-- No existing lineLabels, create all new
+		lineLabels = table.create(numLines)
+		for i=1, numLines do
+			local lineLabel = Instance.new("TextLabel")
+			lineLabel.Name = "Line_" .. i
+			lineLabel.RichText = true
+			lineLabel.BackgroundTransparency = 1
+			lineLabel.TextXAlignment = Enum.TextXAlignment.Left
+			lineLabel.TextYAlignment = Enum.TextYAlignment.Top
+			lineLabel.TextColor3 = TokenColors.iden
+			lineLabel.Font = textObject.Font
+			lineLabel.TextSize = textSize
+			lineLabel.Size = UDim2.new(1,0,0,textSize)
+			lineLabel.Position = UDim2.fromOffset(0, (textSize*textObject.LineHeight)*(i-1))
+			lineLabel.Text = ""
+
+			lineLabel.Parent = textObject
+			lineLabels[i] = lineLabel
+		end
+	elseif #lineLabels < numLines then
+		-- Existing labels, but missing some lines
+		for i=#lineLabels+1, numLines do
+			local lineLabel = Instance.new("TextLabel")
+			lineLabel.Name = "Line_" .. i
+			lineLabel.RichText = true
+			lineLabel.BackgroundTransparency = 1
+			lineLabel.TextXAlignment = Enum.TextXAlignment.Left
+			lineLabel.TextYAlignment = Enum.TextYAlignment.Top
+			lineLabel.TextColor3 = TokenColors.iden
+			lineLabel.Font = textObject.Font
+			lineLabel.TextSize = textSize
+			lineLabel.Size = UDim2.new(1,0,0,textSize)
+			lineLabel.Position = UDim2.fromOffset(0, (textSize*textObject.LineHeight)*(i-1))
+			lineLabel.Text = ""
+
+			lineLabel.Parent = textObject
+			lineLabels[i] = lineLabel
+		end
+	elseif #lineLabels > numLines then
+		-- Existing labels, with too many lines
+		for i=#lineLabels, numLines, -1 do
+			lineLabels[i].Text = ""
 		end
 	end
 
-	local Formatted = table.concat(RichText)
-	if #Formatted <= 16384 then -- TextLabel.Text can only be 16 Kibibyte
-		Label.Text = Formatted
-	else
-		Label.Text = SanitizeTabs(SanitizeRichText(SanitizeUnicode(Src)))
+	local richText, index, lineNumber = {}, 0, 1
+	for token, content in Lexer.scan(src) do
+		local Color = TokenColors[token] or TokenColors.iden
+
+		local lines = string.split(SanitizeRichText(content), "\n")
+		for l, line in ipairs(lines) do
+			if l>1 then
+				-- Set line
+				lineLabels[lineNumber].Text = table.concat(richText)
+				-- Move to next line
+				lineNumber += 1
+				index = 0
+				table.clear(richText)
+			end
+
+			index += 1
+			if Color ~= TokenColors.iden and string.find(line, "[%S%C]") then
+				richText[index] = string.format(TokenFormats[token], line)
+			else
+				richText[index] = line
+			end
+		end
 	end
 
-	ActiveLabels[Label] = Src
+	-- Set final line
+	lineLabels[lineNumber].Text = table.concat(richText)
 
-	local Cleanup; Cleanup = Label.AncestryChanged:Connect(function()
-		if Label.Parent then return end
-		ActiveLabels[Label] = nil
+	ActiveLabels[textObject] = lineLabels
+
+	local Cleanup; Cleanup = textObject.AncestryChanged:Connect(function()
+		if textObject.Parent then return end
+		ActiveLabels[textObject] = nil
 		Cleanup:Disconnect()
 	end)
 end
@@ -84,8 +134,11 @@ local function updateColors()
 	end
 
 	-- Rehighlight existing labels using latest colors
-	for label, src in pairs(ActiveLabels) do
-		highlight(label, src)
+	for label, lineLabels in pairs(ActiveLabels) do
+		for _, lineLabel in ipairs(lineLabels) do
+			lineLabel.TextColor3 = TokenColors.iden
+		end
+		highlight(label)
 	end
 end
 pcall(updateColors)
