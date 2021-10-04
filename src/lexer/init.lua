@@ -206,7 +206,7 @@ function lexer.navigator()
 
 				local success, token, src = nil, nil, nil
 
-				for i = 1, IterationsAway do
+				for _ = 1, IterationsAway do
 					success, token, src = coroutine.resume(nav._ScanThread)
 					if not (success or token) then
 						-- Lex completed
