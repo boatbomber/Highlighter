@@ -39,7 +39,7 @@ local function highlight(textObject: Instance, src: string?)
 	if not lineLabels then
 		-- No existing lineLabels, create all new
 		lineLabels = table.create(numLines)
-		for i=1, numLines do
+		for i = 1, numLines do
 			local lineLabel = Instance.new("TextLabel")
 			lineLabel.Name = "Line_" .. i
 			lineLabel.RichText = true
@@ -49,8 +49,8 @@ local function highlight(textObject: Instance, src: string?)
 			lineLabel.TextColor3 = TokenColors.iden
 			lineLabel.Font = textObject.Font
 			lineLabel.TextSize = textSize
-			lineLabel.Size = UDim2.new(1,0,0,textSize)
-			lineLabel.Position = UDim2.fromOffset(0, (textSize*textObject.LineHeight)*(i-1))
+			lineLabel.Size = UDim2.new(1, 0, 0, textSize)
+			lineLabel.Position = UDim2.fromOffset(0, (textSize * textObject.LineHeight) * (i - 1))
 			lineLabel.Text = ""
 
 			lineLabel.Parent = textObject
@@ -58,7 +58,7 @@ local function highlight(textObject: Instance, src: string?)
 		end
 	elseif #lineLabels < numLines then
 		-- Existing labels, but missing some lines
-		for i=#lineLabels+1, numLines do
+		for i = #lineLabels + 1, numLines do
 			local lineLabel = Instance.new("TextLabel")
 			lineLabel.Name = "Line_" .. i
 			lineLabel.RichText = true
@@ -68,8 +68,8 @@ local function highlight(textObject: Instance, src: string?)
 			lineLabel.TextColor3 = TokenColors.iden
 			lineLabel.Font = textObject.Font
 			lineLabel.TextSize = textSize
-			lineLabel.Size = UDim2.new(1,0,0,textSize)
-			lineLabel.Position = UDim2.fromOffset(0, (textSize*textObject.LineHeight)*(i-1))
+			lineLabel.Size = UDim2.new(1, 0, 0, textSize)
+			lineLabel.Position = UDim2.fromOffset(0, (textSize * textObject.LineHeight) * (i - 1))
 			lineLabel.Text = ""
 
 			lineLabel.Parent = textObject
@@ -77,7 +77,7 @@ local function highlight(textObject: Instance, src: string?)
 		end
 	elseif #lineLabels > numLines then
 		-- Existing labels, with too many lines
-		for i=#lineLabels, numLines, -1 do
+		for i = #lineLabels, numLines, -1 do
 			lineLabels[i].Text = ""
 		end
 	end
@@ -88,7 +88,7 @@ local function highlight(textObject: Instance, src: string?)
 
 		local lines = string.split(SanitizeRichText(content), "\n")
 		for l, line in ipairs(lines) do
-			if l>1 then
+			if l > 1 then
 				-- Set line
 				lineLabels[lineNumber].Text = table.concat(richText)
 				-- Move to next line
@@ -111,8 +111,11 @@ local function highlight(textObject: Instance, src: string?)
 
 	ActiveLabels[textObject] = lineLabels
 
-	local Cleanup; Cleanup = textObject.AncestryChanged:Connect(function()
-		if textObject.Parent then return end
+	local Cleanup
+	Cleanup = textObject.AncestryChanged:Connect(function()
+		if textObject.Parent then
+			return
+		end
 		ActiveLabels[textObject] = nil
 		Cleanup:Disconnect()
 	end)
@@ -130,7 +133,9 @@ local function updateColors()
 	TokenColors.operator = Color3.fromRGB(255, 239, 148)
 
 	for key, color in pairs(TokenColors) do
-		TokenFormats[key] = "<font color=\"#" .. string.format("%.2x%.2x%.2x", color.R*255,color.G*255,color.B*255) .. "\">%s</font>"
+		TokenFormats[key] = '<font color="#'
+			.. string.format("%.2x%.2x%.2x", color.R * 255, color.G * 255, color.B * 255)
+			.. '">%s</font>'
 	end
 
 	-- Rehighlight existing labels using latest colors

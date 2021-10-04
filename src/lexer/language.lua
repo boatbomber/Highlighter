@@ -120,5 +120,5 @@ return {
 		["Vector2int16"] = true,
 		["Vector3"] = true,
 		["Vector3int16"] = true,
-	}
+	},
 }
