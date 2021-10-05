@@ -53,56 +53,56 @@ local lua_builtin = lang.builtin
 
 local lua_matches = {
 	-- Indentifiers
-	{ Prefix .. IDEN .. Suffix, "var" },
+	{Prefix .. IDEN .. Suffix, "var"};
 
 	-- Numbers
-	{ Prefix .. NUMBER_A .. Suffix, "number" },
-	{ Prefix .. NUMBER_B .. Suffix, "number" },
-	{ Prefix .. NUMBER_C .. Suffix, "number" },
+	{Prefix .. NUMBER_A .. Suffix, "number"};
+	{Prefix .. NUMBER_B .. Suffix, "number"};
+	{Prefix .. NUMBER_C .. Suffix, "number"};
 
 	-- Strings
-	{ Prefix .. STRING_EMPTY .. Suffix, "string" },
-	{ Prefix .. STRING_PLAIN .. Suffix, "string" },
-	{ Prefix .. STRING_INCOMP_A .. Suffix, "string" },
-	{ Prefix .. STRING_INCOMP_B .. Suffix, "string" },
-	{ Prefix .. STRING_MULTI .. Suffix, "string" },
-	{ Prefix .. STRING_MULTI_INCOMP .. Suffix, "string" },
+	{Prefix .. STRING_EMPTY .. Suffix, "string"};
+	{Prefix .. STRING_PLAIN .. Suffix, "string"};
+	{Prefix .. STRING_INCOMP_A .. Suffix, "string"};
+	{Prefix .. STRING_INCOMP_B .. Suffix, "string"};
+	{Prefix .. STRING_MULTI .. Suffix, "string"};
+	{Prefix .. STRING_MULTI_INCOMP .. Suffix, "string"};
 
 	-- Comments
-	{ Prefix .. COMMENT_MULTI .. Suffix, "comment" },
-	{ Prefix .. COMMENT_MULTI_INCOMP .. Suffix, "comment" },
-	{ Prefix .. COMMENT_PLAIN .. Suffix, "comment" },
-	{ Prefix .. COMMENT_INCOMP .. Suffix, "comment" },
+	{Prefix .. COMMENT_MULTI .. Suffix, "comment"};
+	{Prefix .. COMMENT_MULTI_INCOMP .. Suffix, "comment"};
+	{Prefix .. COMMENT_PLAIN .. Suffix, "comment"};
+	{Prefix .. COMMENT_INCOMP .. Suffix, "comment"};
 
 	-- Operators
-	{ Prefix .. OPERATORS .. Suffix, "operator" },
-	{ Prefix .. BRACKETS .. Suffix, "operator" },
+	{Prefix .. OPERATORS .. Suffix, "operator"};
+	{Prefix .. BRACKETS .. Suffix, "operator"};
 
 	-- Unicode
-	{ Prefix .. UNICODE .. Suffix, "iden" },
+	{Prefix .. UNICODE .. Suffix, "iden"};
 
 	-- Unknown
-	{ "^.", "iden" },
+	{"^.", "iden"};
 }
 
 --- Create a plain token iterator from a string.
 -- @tparam string s a string.
 
-function lexer.scan(s)
-	--local startTime = os.clock()
+function lexer.scan(s: string)
 	lexer.finished = false
 
-	local function lex()
-		local sz = #s
-		local idx = 1
+	local index = 1
+	local sz = #s
 
-		while idx <= sz do
+	-- stylua: ignore
+	return function()
+		if index <= sz then
 			for _, m in ipairs(lua_matches) do
-				local i1, i2 = string.find(s, m[1], idx)
+				local i1, i2 = string.find(s, m[1], index)
 				if i1 then
 					local tok = string.sub(s, i1, i2)
-					idx = i2 + 1
-					lexer.finished = idx > sz
+					index = i2 + 1
+					lexer.finished = index > sz
 					--if lexer.finished then
 					--	print((os.clock()-startTime)*1000, "ms")
 					--end
@@ -114,32 +114,29 @@ function lexer.scan(s)
 						local cleanTok = string.gsub(tok, Cleaner, "")
 
 						if lua_keyword[cleanTok] then
-							coroutine.yield("keyword", tok)
+							return "keyword", tok
 						elseif lua_builtin[cleanTok] then
-							coroutine.yield("builtin", tok)
+							return "builtin", tok
 						else
-							coroutine.yield("iden", tok)
+							return "iden", tok
 						end
 					else
-						coroutine.yield(t, tok)
+						return t, tok
 					end
-
-					break
 				end
 			end
 		end
-	end
-	return coroutine.wrap(lex)
+	end, nil
 end
 
 function lexer.navigator()
 	local nav = {
-		Source = "",
-		TokenCache = table.create(50),
+		Source = "";
+		TokenCache = table.create(50);
 
-		_RealIndex = 0,
-		_UserIndex = 0,
-		_ScanThread = nil,
+		_RealIndex = 0;
+		_UserIndex = 0;
+		_ScanThread = nil;
 	}
 
 	function nav:Destroy()
@@ -160,7 +157,7 @@ function lexer.navigator()
 		self._ScanThread = coroutine.create(function()
 			for Token, Src in lexer.scan(self.Source) do
 				self._RealIndex += 1
-				self.TokenCache[self._RealIndex] = { Token, Src }
+				self.TokenCache[self._RealIndex] = {Token, Src}
 				coroutine.yield(Token, Src)
 			end
 		end)
