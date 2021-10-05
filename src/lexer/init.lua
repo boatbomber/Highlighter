@@ -53,36 +53,36 @@ local lua_builtin = lang.builtin
 
 local lua_matches = {
 	-- Indentifiers
-	{Prefix .. IDEN .. Suffix, "var"};
+	{ Prefix .. IDEN .. Suffix, "var" },
 
 	-- Numbers
-	{Prefix .. NUMBER_A .. Suffix, "number"};
-	{Prefix .. NUMBER_B .. Suffix, "number"};
-	{Prefix .. NUMBER_C .. Suffix, "number"};
+	{ Prefix .. NUMBER_A .. Suffix, "number" },
+	{ Prefix .. NUMBER_B .. Suffix, "number" },
+	{ Prefix .. NUMBER_C .. Suffix, "number" },
 
 	-- Strings
-	{Prefix .. STRING_EMPTY .. Suffix, "string"};
-	{Prefix .. STRING_PLAIN .. Suffix, "string"};
-	{Prefix .. STRING_INCOMP_A .. Suffix, "string"};
-	{Prefix .. STRING_INCOMP_B .. Suffix, "string"};
-	{Prefix .. STRING_MULTI .. Suffix, "string"};
-	{Prefix .. STRING_MULTI_INCOMP .. Suffix, "string"};
+	{ Prefix .. STRING_EMPTY .. Suffix, "string" },
+	{ Prefix .. STRING_PLAIN .. Suffix, "string" },
+	{ Prefix .. STRING_INCOMP_A .. Suffix, "string" },
+	{ Prefix .. STRING_INCOMP_B .. Suffix, "string" },
+	{ Prefix .. STRING_MULTI .. Suffix, "string" },
+	{ Prefix .. STRING_MULTI_INCOMP .. Suffix, "string" },
 
 	-- Comments
-	{Prefix .. COMMENT_MULTI .. Suffix, "comment"};
-	{Prefix .. COMMENT_MULTI_INCOMP .. Suffix, "comment"};
-	{Prefix .. COMMENT_PLAIN .. Suffix, "comment"};
-	{Prefix .. COMMENT_INCOMP .. Suffix, "comment"};
+	{ Prefix .. COMMENT_MULTI .. Suffix, "comment" },
+	{ Prefix .. COMMENT_MULTI_INCOMP .. Suffix, "comment" },
+	{ Prefix .. COMMENT_PLAIN .. Suffix, "comment" },
+	{ Prefix .. COMMENT_INCOMP .. Suffix, "comment" },
 
 	-- Operators
-	{Prefix .. OPERATORS .. Suffix, "operator"};
-	{Prefix .. BRACKETS .. Suffix, "operator"};
+	{ Prefix .. OPERATORS .. Suffix, "operator" },
+	{ Prefix .. BRACKETS .. Suffix, "operator" },
 
 	-- Unicode
-	{Prefix .. UNICODE .. Suffix, "iden"};
+	{ Prefix .. UNICODE .. Suffix, "iden" },
 
 	-- Unknown
-	{"^.", "iden"};
+	{ "^.", "iden" },
 }
 
 --- Create a plain token iterator from a string.
@@ -131,12 +131,12 @@ end
 
 function lexer.navigator()
 	local nav = {
-		Source = "";
-		TokenCache = table.create(50);
+		Source = "",
+		TokenCache = table.create(50),
 
-		_RealIndex = 0;
-		_UserIndex = 0;
-		_ScanThread = nil;
+		_RealIndex = 0,
+		_UserIndex = 0,
+		_ScanThread = nil,
 	}
 
 	function nav:Destroy()
@@ -157,7 +157,7 @@ function lexer.navigator()
 		self._ScanThread = coroutine.create(function()
 			for Token, Src in lexer.scan(self.Source) do
 				self._RealIndex += 1
-				self.TokenCache[self._RealIndex] = {Token, Src}
+				self.TokenCache[self._RealIndex] = { Token, Src }
 				coroutine.yield(Token, Src)
 			end
 		end)
