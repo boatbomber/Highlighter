@@ -88,21 +88,22 @@ local lua_matches = {
 --- Create a plain token iterator from a string.
 -- @tparam string s a string.
 
-function lexer.scan(s)
-	--local startTime = os.clock()
+function lexer.scan(s: string)
+	-- local startTime = os.clock()
 	lexer.finished = false
 
-	local function lex()
-		local sz = #s
-		local idx = 1
+	local index = 1
+	local sz = #s
 
-		while idx <= sz do
+	-- stylua: ignore
+	return function()
+		if index <= sz then
 			for _, m in ipairs(lua_matches) do
-				local i1, i2 = string.find(s, m[1], idx)
+				local i1, i2 = string.find(s, m[1], index)
 				if i1 then
 					local tok = string.sub(s, i1, i2)
-					idx = i2 + 1
-					lexer.finished = idx > sz
+					index = i2 + 1
+					lexer.finished = index > sz
 					--if lexer.finished then
 					--	print((os.clock()-startTime)*1000, "ms")
 					--end
@@ -114,22 +115,19 @@ function lexer.scan(s)
 						local cleanTok = string.gsub(tok, Cleaner, "")
 
 						if lua_keyword[cleanTok] then
-							coroutine.yield("keyword", tok)
+							return "keyword", tok
 						elseif lua_builtin[cleanTok] then
-							coroutine.yield("builtin", tok)
+							return "builtin", tok
 						else
-							coroutine.yield("iden", tok)
+							return "iden", tok
 						end
 					else
-						coroutine.yield(t, tok)
+						return t, tok
 					end
-
-					break
 				end
 			end
 		end
 	end
-	return coroutine.wrap(lex)
 end
 
 function lexer.navigator()
