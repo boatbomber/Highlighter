@@ -50,6 +50,7 @@ local COMMENT_INCOMP = "%-%-.*" --Incompleted Singleline-Comment
 local lang = require(script.language)
 local lua_keyword = lang.keyword
 local lua_builtin = lang.builtin
+local lua_libraries = lang.libraries
 
 local lua_matches = {
 	-- Indentifiers
@@ -94,8 +95,8 @@ function lexer.scan(s: string)
 
 	local index = 1
 	local sz = #s
+	local p1, p2 = "", ""
 
-	-- stylua: ignore
 	return function()
 		if index <= sz then
 			for _, m in ipairs(lua_matches) do
@@ -109,21 +110,42 @@ function lexer.scan(s: string)
 					--end
 
 					local t = m[2]
+					local t2 = t
+
+					-- Process t into t2
 					if t == "var" then
 						-- Since we merge spaces into the tok, we need to remove them
 						-- in order to check the actual word it contains
 						local cleanTok = string.gsub(tok, Cleaner, "")
 
 						if lua_keyword[cleanTok] then
-							return "keyword", tok
+							t2 = "keyword"
 						elseif lua_builtin[cleanTok] then
-							return "builtin", tok
+							t2 = "builtin"
 						else
-							return "iden", tok
+							t2 = "iden"
 						end
-					else
-						return t, tok
+
+						if string.find(p1, "%.[%s%c]*$") then
+							-- The previous was a . so we need to special case indexing things
+							local parent = string.gsub(p2, Cleaner, "")
+							local lib = lua_libraries[parent]
+							if lib and lib[cleanTok] then
+								-- Indexing a builtin lib with existing item, treat as a builtin
+								t2 = "builtin"
+							else
+								-- Indexing a non builtin, can't be treated as a keyword/builtin
+								t2 = "iden"
+							end
+							-- print("indexing",parent,"with",cleanTok,"as",t2)
+						end
 					end
+
+					-- Record last 2 tokens for the indexing context check
+					p2 = p1
+					p1 = tok
+
+					return t2, tok
 				end
 			end
 		end
