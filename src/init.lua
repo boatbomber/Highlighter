@@ -27,6 +27,9 @@ local function highlight(textObject: Instance, src: string?)
 
 	textObject.RichText = false
 	textObject.Text = src
+	textObject.TextXAlignment = Enum.TextXAlignment.Left
+	textObject.TextYAlignment = Enum.TextYAlignment.Top
+	textObject.BackgroundColor3 = TokenColors.background
 	textObject.TextColor3 = TokenColors.iden
 	textObject.TextTransparency = 0.5
 
