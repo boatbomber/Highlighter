@@ -127,7 +127,7 @@ function lexer.scan(s: string)
 				end
 			end
 		end
-	end, nil
+	end
 end
 
 function lexer.navigator()
