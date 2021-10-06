@@ -89,6 +89,7 @@ local lua_matches = {
 -- @tparam string s a string.
 
 function lexer.scan(s: string)
+	-- local startTime = os.clock()
 	lexer.finished = false
 
 	local index = 1
