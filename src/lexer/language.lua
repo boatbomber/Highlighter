@@ -93,6 +93,7 @@ return {
 		-- Roblox Tables
 		["Axes"] = true,
 		["BrickColor"] = true,
+		["CatalogSearchParams"] = true,
 		["CellId"] = true,
 		["CFrame"] = true,
 		["Color3"] = true,
@@ -101,18 +102,23 @@ return {
 		["DateTime"] = true,
 		["DockWidgetPluginGuiInfo"] = true,
 		["Faces"] = true,
+		["File"] = true,
+		["FloatCurveKey"] = true,
 		["Instance"] = true,
 		["NumberRange"] = true,
 		["NumberSequence"] = true,
 		["NumberSequenceKeypoint"] = true,
+		["OverlapParams"] = true,
 		["PathWaypoint"] = true,
 		["PhysicalProperties"] = true,
 		["PluginDrag"] = true,
 		["Random"] = true,
 		["Ray"] = true,
+		["RaycastParams"] = true,
 		["Rect"] = true,
 		["Region3"] = true,
 		["Region3int16"] = true,
+		["RotationCurveKey"] = true,
 		["TweenInfo"] = true,
 		["UDim"] = true,
 		["UDim2"] = true,
@@ -123,6 +129,8 @@ return {
 	},
 
 	libraries = {
+
+		-- Lua Libraries
 		math = {
 			abs = true,
 			acos = true,
@@ -148,6 +156,7 @@ return {
 			pow = true,
 			rad = true,
 			random = true,
+			round = true,
 			sinh = true,
 			sqrt = true,
 			tan = true,
@@ -170,19 +179,26 @@ return {
 			len = true,
 			lower = true,
 			match = true,
+			pack = true,
+			packsize = true,
 			rep = true,
 			reverse = true,
 			split = true,
 			sub = true,
+			unpack = true,
 			upper = true,
 		},
 
 		table = {
+			clear = true,
 			concat = true,
 			foreach = true,
 			foreachi = true,
+			freeze = true,
 			getn = true,
 			insert = true,
+			isfrozen = true,
+			maxn = true,
 			remove = true,
 			sort = true,
 			find = true,
@@ -193,8 +209,11 @@ return {
 		},
 
 		debug = {
+			info = true,
 			profilebegin = true,
 			profileend = true,
+			resetmemorycategory = true,
+			setmemorycategory = true,
 			traceback = true,
 		},
 
@@ -203,6 +222,8 @@ return {
 			spawn = true,
 			delay = true,
 			defer = true,
+			synchronize = true,
+			desynchronize = true,
 		},
 
 		os = {
@@ -246,7 +267,178 @@ return {
 			nfcnormalize = true,
 			nfdnormalize = true,
 			offset = true,
+
 			charpattern = true,
+		},
+
+		-- Roblox Libraries
+		Axes = {
+			new = true,
+		},
+
+		BrickColor = {
+			new = true,
+			Random = true,
+			Black = true,
+			Blue = true,
+			DarkGray = true,
+			Gray = true,
+			Green = true,
+			Red = true,
+			White = true,
+			Yellow = true,
+			palette = true,
+			random = true,
+		},
+
+		CatalogSearchParams = {
+			new = true,
+		},
+
+		CellId = {
+			new = true,
+		},
+
+		CFrame = {
+			new = true,
+			Angles = true,
+			fromAxisAngle = true,
+			fromEulerAnglesXYZ = true,
+			fromEulerAnglesYXZ = true,
+			fromMatrix = true,
+			fromOrientation = true,
+			lookAt = true,
+		},
+
+		Color3 = {
+			new = true,
+			fromRGB = true,
+			fromHSV = true,
+			fromHex = true,
+			toHSV = true,
+		},
+
+		ColorSequence = {
+			new = true,
+		},
+
+		ColorSequenceKeypoint = {
+			new = true,
+		},
+
+		DateTime = {
+			now = true,
+			fromIsoDate = true,
+			fromLocalTime = true,
+			fromUniversalTime = true,
+			fromUnixTimestamp = true,
+			fromUnixTimestampMillis = true,
+		},
+
+		DockWidgetPluginGuiInfo = {
+			new = true,
+		},
+
+		Faces = {
+			new = true,
+		},
+
+		FloatCurveKey = {
+			new = true,
+		},
+
+		Instance = {
+			new = true,
+		},
+
+		NumberRange = {
+			new = true,
+		},
+
+		NumberSequence = {
+			new = true,
+		},
+
+		NumberSequenceKeypoint = {
+			new = true,
+		},
+
+		OverlapParams = {
+			new = true,
+		},
+
+		PathWaypoint = {
+			new = true,
+		},
+
+		PhysicalProperties = {
+			new = true,
+		},
+
+		PluginDrag = {
+			new = true,
+		},
+
+		Random = {
+			new = true,
+		},
+
+		Ray = {
+			new = true,
+		},
+
+		RaycastParams = {
+			new = true,
+		},
+
+		Rect = {
+			new = true,
+		},
+
+		Region3 = {
+			new = true,
+		},
+
+		Region3int16 = {
+			new = true,
+		},
+
+		RotationCurveKey = {
+			new = true,
+		},
+
+		TweenInfo = {
+			new = true,
+		},
+
+		UDim = {
+			new = true,
+		},
+
+		UDim2 = {
+			new = true,
+			fromScale = true,
+			fromOffset = true,
+		},
+
+		Vector2 = {
+			new = true,
+		},
+
+		Vector2int16 = {
+			new = true,
+		},
+
+		Vector3 = {
+			new = true,
+			fromAxis = true,
+			fromNormalId = true,
+			FromAxis = true,
+			FromNormalId = true,
+		},
+
+		Vector3int16 = {
+			new = true,
 		},
 	},
 }
