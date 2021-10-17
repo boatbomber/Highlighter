@@ -172,7 +172,11 @@ local function updateColors(colors: HighlighterColors?)
 end
 pcall(updateColors)
 
-return {
+return setmetatable({
 	UpdateColors = updateColors,
 	Highlight = highlight
-}
+}, {
+	__call = function(_, textObject: Instance, src: string?)
+		return highlight(textObject, src)
+	end
+})
