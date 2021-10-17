@@ -134,16 +134,27 @@ local function highlight(textObject: Instance, src: string?)
 	end
 end
 
-local function updateColors()
+export type HighlighterColors = {
+	background: Color3?,
+	iden: Color3?,
+	keyword: Color3?,
+	builtin: Color3?,
+	string: Color3?,
+	number: Color3?,
+	comment: Color3?,
+	operator: Color3?
+}
+
+local function updateColors(colors: HighlighterColors?)
 	-- Setup color data
-	TokenColors.background = Color3.fromRGB(47, 47, 47)
-	TokenColors.iden = Color3.fromRGB(234, 234, 234)
-	TokenColors.keyword = Color3.fromRGB(215, 174, 255)
-	TokenColors.builtin = Color3.fromRGB(131, 206, 255)
-	TokenColors.string = Color3.fromRGB(196, 255, 193)
-	TokenColors.number = Color3.fromRGB(255, 125, 125)
-	TokenColors.comment = Color3.fromRGB(140, 140, 155)
-	TokenColors.operator = Color3.fromRGB(255, 239, 148)
+	TokenColors.background = (colors and colors.background) or Color3.fromRGB(47, 47, 47)
+	TokenColors.iden = (colors and colors.iden) or Color3.fromRGB(234, 234, 234)
+	TokenColors.keyword = (colors and colors.keyword) or Color3.fromRGB(215, 174, 255)
+	TokenColors.builtin = (colors and colors.builtin) or Color3.fromRGB(131, 206, 255)
+	TokenColors.string = (colors and colors.string) or Color3.fromRGB(196, 255, 193)
+	TokenColors.number = (colors and colors.number) or Color3.fromRGB(255, 125, 125)
+	TokenColors.comment = (colors and colors.comment) or Color3.fromRGB(140, 140, 155)
+	TokenColors.operator = (colors and colors.operator) or Color3.fromRGB(255, 239, 148)
 
 	for key, color in pairs(TokenColors) do
 		TokenFormats[key] = '<font color="#'
@@ -161,4 +172,7 @@ local function updateColors()
 end
 pcall(updateColors)
 
-return highlight
+return {
+	UpdateColors = updateColors,
+	Highlight = highlight
+}
