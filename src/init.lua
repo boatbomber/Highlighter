@@ -122,6 +122,16 @@ local function highlight(textObject: Instance, src: string?)
 		ActiveLabels[textObject] = nil
 		Cleanup:Disconnect()
 	end)
+
+	return function()
+		for _, label in ipairs(lineLabels) do
+			label:Destroy()
+		end
+		table.clear(lineLabels)
+
+		ActiveLabels[textObject] = nil
+		Cleanup:Disconnect()
+	end
 end
 
 local function updateColors()
