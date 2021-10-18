@@ -95,7 +95,7 @@ function lexer.scan(s: string)
 
 	local index = 1
 	local sz = #s
-	local p1, p2 = "", ""
+	local p1, p2, pT = "", "", ""
 
 	return function()
 		if index <= sz then
@@ -126,7 +126,7 @@ function lexer.scan(s: string)
 							t2 = "iden"
 						end
 
-						if string.find(p1, "%.[%s%c]*$") then
+						if string.find(p1, "%.[%s%c]*$") and pT ~= "comment" then
 							-- The previous was a . so we need to special case indexing things
 							local parent = string.gsub(p2, Cleaner, "")
 							local lib = lua_libraries[parent]
@@ -144,7 +144,7 @@ function lexer.scan(s: string)
 					-- Record last 2 tokens for the indexing context check
 					p2 = p1
 					p1 = tok
-
+					pT = t2
 					return t2, tok
 				end
 			end
