@@ -130,7 +130,7 @@ function lexer.scan(s: string)
 							-- The previous was a . so we need to special case indexing things
 							local parent = string.gsub(p2, Cleaner, "")
 							local lib = lua_libraries[parent]
-							if lib and lib[cleanTok] and string.sub(p3, #p3) ~= "." then
+							if lib and lib[cleanTok] and not string.find(p3, "%.[%s%c]*$") then
 								-- Indexing a builtin lib with existing item, treat as a builtin
 								t2 = "builtin"
 							else
