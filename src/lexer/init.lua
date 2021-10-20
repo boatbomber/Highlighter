@@ -95,7 +95,7 @@ function lexer.scan(s: string)
 
 	local index = 1
 	local sz = #s
-	local p1, p2, pT = "", "", ""
+	local p1, p2, p3, pT = "", "", "", ""
 
 	return function()
 		if index <= sz then
@@ -130,7 +130,7 @@ function lexer.scan(s: string)
 							-- The previous was a . so we need to special case indexing things
 							local parent = string.gsub(p2, Cleaner, "")
 							local lib = lua_libraries[parent]
-							if lib and lib[cleanTok] then
+							if lib and lib[cleanTok] and not string.find(p3, "%.[%s%c]*$") then
 								-- Indexing a builtin lib with existing item, treat as a builtin
 								t2 = "builtin"
 							else
@@ -141,7 +141,8 @@ function lexer.scan(s: string)
 						end
 					end
 
-					-- Record last 2 tokens for the indexing context check
+					-- Record last 3 tokens for the indexing context check
+					p3 = p2
 					p2 = p1
 					p1 = tok
 					pT = t2
