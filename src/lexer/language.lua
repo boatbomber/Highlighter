@@ -308,6 +308,8 @@ return {
 			fromMatrix = true,
 			fromOrientation = true,
 			lookAt = true,
+			
+			identity = true,
 		},
 
 		Color3 = {
@@ -423,6 +425,11 @@ return {
 
 		Vector2 = {
 			new = true,
+			
+			one = true,
+			zero = true,
+			xAxis = true,
+			yAxis = true,
 		},
 
 		Vector2int16 = {
@@ -435,6 +442,12 @@ return {
 			fromNormalId = true,
 			FromAxis = true,
 			FromNormalId = true,
+			
+			one = true,
+			zero = true,
+			xAxis = true,
+			yAxis = true,
+			zAxis = true,
 		},
 
 		Vector3int16 = {
