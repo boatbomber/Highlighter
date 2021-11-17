@@ -250,6 +250,8 @@ return {
 			bor = true,
 			btest = true,
 			bxor = true,
+			countlz = true,
+			countrz = true,
 			extract = true,
 			lrotate = true,
 			lshift = true,
