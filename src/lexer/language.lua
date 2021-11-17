@@ -119,6 +119,7 @@ return {
 		["Region3"] = true,
 		["Region3int16"] = true,
 		["RotationCurveKey"] = true,
+		["TextChatMessageProperties"] = true,
 		["TweenInfo"] = true,
 		["UDim"] = true,
 		["UDim2"] = true,
