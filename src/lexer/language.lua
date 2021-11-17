@@ -65,7 +65,6 @@ return {
 		["string"] = true,
 		["table"] = true,
 		["utf8"] = true,
-		["task"] = true,
 
 		-- Roblox Functions
 		["delay"] = true,
@@ -119,6 +118,7 @@ return {
 		["Region3"] = true,
 		["Region3int16"] = true,
 		["RotationCurveKey"] = true,
+		["task"] = true,
 		["TextChatMessageProperties"] = true,
 		["TweenInfo"] = true,
 		["UDim"] = true,
@@ -210,21 +210,13 @@ return {
 		},
 
 		debug = {
+			dumpheap = true,
 			info = true,
 			profilebegin = true,
 			profileend = true,
 			resetmemorycategory = true,
 			setmemorycategory = true,
 			traceback = true,
-		},
-
-		task = {
-			wait = true,
-			spawn = true,
-			delay = true,
-			defer = true,
-			synchronize = true,
-			desynchronize = true,
 		},
 
 		os = {
@@ -281,6 +273,7 @@ return {
 
 		BrickColor = {
 			new = true,
+			New = true,
 			Random = true,
 			Black = true,
 			Blue = true,
@@ -410,6 +403,15 @@ return {
 
 		RotationCurveKey = {
 			new = true,
+		},
+
+		task = {
+			wait = true,
+			spawn = true,
+			delay = true,
+			defer = true,
+			synchronize = true,
+			desynchronize = true,
 		},
 
 		TweenInfo = {
