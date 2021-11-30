@@ -95,7 +95,7 @@ function lexer.scan(s: string)
 
 	local index = 1
 	local sz = #s
-	local p1, p2, p3, pT = "", "", "", ""
+	local p1, p2, p3, pT, pLib = "", "", "", "", nil
 
 	return function()
 		if index <= sz then
@@ -117,10 +117,12 @@ function lexer.scan(s: string)
 						-- Since we merge spaces into the tok, we need to remove them
 						-- in order to check the actual word it contains
 						local cleanTok = string.gsub(tok, Cleaner, "")
+						local tp3 = string.find(p3, "%.[%s%c]*$")
 
 						if lua_keyword[cleanTok] then
 							t2 = "keyword"
-						elseif lua_builtin[cleanTok] then
+							pLib = nil
+						elseif lua_builtin[cleanTok] and not tp3 then
 							t2 = "builtin"
 						else
 							t2 = "iden"
@@ -129,13 +131,15 @@ function lexer.scan(s: string)
 						if string.find(p1, "%.[%s%c]*$") and pT ~= "comment" then
 							-- The previous was a . so we need to special case indexing things
 							local parent = string.gsub(p2, Cleaner, "")
-							local lib = lua_libraries[parent]
-							if lib and lib[cleanTok] and not string.find(p3, "%.[%s%c]*$") then
+							local lib = (type(pLib) == "table" and pLib[parent]) or ((not pLib and not tp3) and lua_libraries[parent]) or nil --All I can say is, I'm sorry.
+							if type(lib) == "table" then
 								-- Indexing a builtin lib with existing item, treat as a builtin
 								t2 = "builtin"
+								pLib = lib
 							else
 								-- Indexing a non builtin, can't be treated as a keyword/builtin
 								t2 = "iden"
+								pLib = nil
 							end
 							-- print("indexing",parent,"with",cleanTok,"as",t2)
 						end
