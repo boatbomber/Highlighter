@@ -36,7 +36,7 @@ local OPERATORS = "[:;<>/~%*%(%)%-={},%.#%^%+%%]+"
 local BRACKETS = "[%[%]]+" -- needs to be separate pattern from other operators or it'll mess up multiline strings
 local IDEN = "[%a_][%w_]*"
 local STRING_EMPTY = "(['\"])%1" --Empty String
-local STRING_PLAIN = [=[(['"])[^\n]-([^%\]%1)]=] --TODO: Handle escaping escapes
+local STRING_PLAIN = "(['\"])[^\n]-([^\\]%1)" --TODO: Handle escaping escapes
 local STRING_INCOMP_A = "(['\"]).-\n" --Incompleted String with next line
 local STRING_INCOMP_B = "(['\"])[^\n]*" --Incompleted String without next line
 local STRING_MULTI = "%[(=*)%[.-%]%1%]" --Multiline-String
