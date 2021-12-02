@@ -217,6 +217,7 @@ return {
 			resetmemorycategory = true,
 			setmemorycategory = true,
 			traceback = true,
+			loadmodule = true,
 		},
 
 		os = {
@@ -234,6 +235,7 @@ return {
 			status = true,
 			wrap = true,
 			yield = true,
+			close = true,
 		},
 
 		bit32 = {
@@ -412,6 +414,10 @@ return {
 			defer = true,
 			synchronize = true,
 			desynchronize = true,
+		},
+		
+		TextChatMessageProperties = {
+			new = true,
 		},
 
 		TweenInfo = {
