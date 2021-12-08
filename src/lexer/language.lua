@@ -143,7 +143,7 @@ return {
 
 	libraries = {
 
-		-- Lua Libraries
+		-- Luau Libraries
 		math = {
 			abs = true,
 			acos = true,
