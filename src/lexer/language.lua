@@ -27,9 +27,8 @@ return {
 	},
 
 	builtin = {
-		-- Lua Functions
+		-- Luau Functions
 		["assert"] = true,
-		["collectgarbage"] = true,
 		["error"] = true,
 		["getfenv"] = true,
 		["getmetatable"] = true,
@@ -52,11 +51,14 @@ return {
 		["unpack"] = true,
 		["xpcall"] = true,
 
-		-- Lua Variables
+		-- Luau Functions (Deprecated)
+		["collectgarbage"] = true,
+
+		-- Luau Variables
 		["_G"] = true,
 		["_VERSION"] = true,
 
-		-- Lua Tables
+		-- Luau Tables
 		["bit32"] = true,
 		["coroutine"] = true,
 		["debug"] = true,
@@ -68,7 +70,6 @@ return {
 
 		-- Roblox Functions
 		["delay"] = true,
-		["elapsedTime"] = true,
 		["gcinfo"] = true,
 		["require"] = true,
 		["settings"] = true,
@@ -79,6 +80,13 @@ return {
 		["UserSettings"] = true,
 		["wait"] = true,
 		["warn"] = true,
+
+		-- Roblox Functions (Deprecated)
+		["Delay"] = true,
+		["ElapsedTime"] = true,
+		["elapsedTime"] = true,
+		["Spawn"] = true,
+		["Wait"] = true,
 		["ypcall"] = true,
 
 		-- Roblox Variables
@@ -88,6 +96,11 @@ return {
 		["script"] = true,
 		["workspace"] = true,
 		["plugin"] = true,
+		["File"] = true,
+
+		-- Roblox Variables (Deprecated)
+		["Game"] = true,
+		["Workspace"] = true,
 
 		-- Roblox Tables
 		["Axes"] = true,
@@ -101,7 +114,6 @@ return {
 		["DateTime"] = true,
 		["DockWidgetPluginGuiInfo"] = true,
 		["Faces"] = true,
-		["File"] = true,
 		["FloatCurveKey"] = true,
 		["Instance"] = true,
 		["NumberRange"] = true,
@@ -131,7 +143,7 @@ return {
 
 	libraries = {
 
-		-- Lua Libraries
+		-- Luau Libraries
 		math = {
 			abs = true,
 			acos = true,
