@@ -492,9 +492,7 @@ local language = {
 local enumLibraryTable = language.libraries.Enum
 
 for _, enum in ipairs(Enum:GetEnums()) do
-	if (typeof(enum)) == "Enum" then --TODO: Remove brackes around typeof(enum) once typechecker engine recognizes "Enum" as a valid type
-		enumLibraryTable[tostring(enum)] = true --TODO: Remove tostring from here once there is a better way to get the name of an Enum
-	end
+	enumLibraryTable[tostring(enum)] = true --TODO: Remove tostring from here once there is a better way to get the name of an Enum
 end
 
 return language
