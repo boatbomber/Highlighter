@@ -1,11 +1,13 @@
-return {
+local language = {
 	keyword = {
 		["and"] = true,
 		["break"] = true,
+		["continue"] = true,
 		["do"] = true,
 		["else"] = true,
 		["elseif"] = true,
 		["end"] = true,
+		["export"] = true,
 		["false"] = true,
 		["for"] = true,
 		["function"] = true,
@@ -14,16 +16,14 @@ return {
 		["local"] = true,
 		["nil"] = true,
 		["not"] = true,
-		["while"] = true,
 		["or"] = true,
 		["repeat"] = true,
 		["return"] = true,
+		["self"] = true,
 		["then"] = true,
 		["true"] = true,
-		["self"] = true,
 		["until"] = true,
-		["continue"] = true,
-		["export"] = true,
+		["while"] = true,
 	},
 
 	builtin = {
@@ -69,8 +69,10 @@ return {
 		["utf8"] = true,
 
 		-- Roblox Functions
+		["DebuggerManager"] = true,
 		["delay"] = true,
 		["gcinfo"] = true,
+		["PluginManager"] = true,
 		["require"] = true,
 		["settings"] = true,
 		["spawn"] = true,
@@ -85,18 +87,22 @@ return {
 		["Delay"] = true,
 		["ElapsedTime"] = true,
 		["elapsedTime"] = true,
+		["printidentity"] = true,
 		["Spawn"] = true,
+		["Stats"] = true,
+		["stats"] = true,
+		["Version"] = true,
+		["version"] = true,
 		["Wait"] = true,
 		["ypcall"] = true,
 
 		-- Roblox Variables
-		["Enum"] = true,
-		["game"] = true,
-		["shared"] = true,
-		["script"] = true,
-		["workspace"] = true,
-		["plugin"] = true,
 		["File"] = true,
+		["game"] = true,
+		["plugin"] = true,
+		["script"] = true,
+		["shared"] = true,
+		["workspace"] = true,
 
 		-- Roblox Variables (Deprecated)
 		["Game"] = true,
@@ -113,6 +119,7 @@ return {
 		["ColorSequenceKeypoint"] = true,
 		["DateTime"] = true,
 		["DockWidgetPluginGuiInfo"] = true,
+		["Enum"] = true,
 		["Faces"] = true,
 		["FloatCurveKey"] = true,
 		["Instance"] = true,
@@ -144,12 +151,51 @@ return {
 	libraries = {
 
 		-- Luau Libraries
+		bit32 = {
+			arshift = true,
+			band = true,
+			bnot = true,
+			bor = true,
+			btest = true,
+			bxor = true,
+			countlz = true,
+			countrz = true,
+			extract = true,
+			lrotate = true,
+			lshift = true,
+			replace = true,
+			rrotate = true,
+			rshift = true,
+		},
+
+		coroutine = {
+			close = true,
+			create = true,
+			isyieldable = true,
+			resume = true,
+			running = true,
+			status = true,
+			wrap = true,
+			yield = true,
+		},
+
+		debug = {
+			dumpheap = true,
+			info = true,
+			loadmodule = true,
+			profilebegin = true,
+			profileend = true,
+			resetmemorycategory = true,
+			setmemorycategory = true,
+			traceback = true,
+		},
+
 		math = {
 			abs = true,
 			acos = true,
 			asin = true,
-			atan = true,
 			atan2 = true,
+			atan = true,
 			ceil = true,
 			clamp = true,
 			cos = true,
@@ -160,8 +206,8 @@ return {
 			fmod = true,
 			frexp = true,
 			ldexp = true,
-			log = true,
 			log10 = true,
+			log = true,
 			max = true,
 			min = true,
 			modf = true,
@@ -169,17 +215,24 @@ return {
 			pow = true,
 			rad = true,
 			random = true,
+			randomseed = true,
 			round = true,
+			sign = true,
+			sin = true,
 			sinh = true,
 			sqrt = true,
 			tan = true,
 			tanh = true,
-			sign = true,
-			sin = true,
-			randomseed = true,
 
 			huge = true,
 			pi = true,
+		},
+
+		os = {
+			clock = true,
+			date = true,
+			difftime = true,
+			time = true,
 		},
 
 		string = {
@@ -205,6 +258,8 @@ return {
 		table = {
 			clear = true,
 			concat = true,
+			create = true,
+			find = true,
 			foreach = true,
 			foreachi = true,
 			freeze = true,
@@ -212,59 +267,11 @@ return {
 			insert = true,
 			isfrozen = true,
 			maxn = true,
+			move = true,
+			pack = true,
 			remove = true,
 			sort = true,
-			find = true,
-			pack = true,
 			unpack = true,
-			move = true,
-			create = true,
-		},
-
-		debug = {
-			dumpheap = true,
-			info = true,
-			profilebegin = true,
-			profileend = true,
-			resetmemorycategory = true,
-			setmemorycategory = true,
-			traceback = true,
-			loadmodule = true,
-		},
-
-		os = {
-			time = true,
-			date = true,
-			difftime = true,
-			clock = true,
-		},
-
-		coroutine = {
-			create = true,
-			isyieldable = true,
-			resume = true,
-			running = true,
-			status = true,
-			wrap = true,
-			yield = true,
-			close = true,
-		},
-
-		bit32 = {
-			arshift = true,
-			band = true,
-			bnot = true,
-			bor = true,
-			btest = true,
-			bxor = true,
-			countlz = true,
-			countrz = true,
-			extract = true,
-			lrotate = true,
-			lshift = true,
-			replace = true,
-			rrotate = true,
-			rshift = true,
 		},
 
 		utf8 = {
@@ -286,19 +293,19 @@ return {
 		},
 
 		BrickColor = {
-			new = true,
-			New = true,
-			Random = true,
 			Black = true,
 			Blue = true,
 			DarkGray = true,
 			Gray = true,
 			Green = true,
+			new = true,
+			New = true,
+			palette = true,
+			Random = true,
+			random = true,
 			Red = true,
 			White = true,
 			Yellow = true,
-			palette = true,
-			random = true,
 		},
 
 		CatalogSearchParams = {
@@ -310,7 +317,6 @@ return {
 		},
 
 		CFrame = {
-			new = true,
 			Angles = true,
 			fromAxisAngle = true,
 			fromEulerAnglesXYZ = true,
@@ -318,15 +324,16 @@ return {
 			fromMatrix = true,
 			fromOrientation = true,
 			lookAt = true,
-			
+			new = true,
+
 			identity = true,
 		},
 
 		Color3 = {
-			new = true,
-			fromRGB = true,
-			fromHSV = true,
 			fromHex = true,
+			fromHSV = true,
+			fromRGB = true,
+			new = true,
 			toHSV = true,
 		},
 
@@ -339,17 +346,19 @@ return {
 		},
 
 		DateTime = {
-			now = true,
 			fromIsoDate = true,
 			fromLocalTime = true,
 			fromUniversalTime = true,
 			fromUnixTimestamp = true,
 			fromUnixTimestampMillis = true,
+			now = true,
 		},
 
 		DockWidgetPluginGuiInfo = {
 			new = true,
 		},
+
+		Enum = {},
 
 		Faces = {
 			new = true,
@@ -420,14 +429,14 @@ return {
 		},
 
 		task = {
-			wait = true,
-			spawn = true,
-			delay = true,
 			defer = true,
-			synchronize = true,
+			delay = true,
 			desynchronize = true,
+			spawn = true,
+			synchronize = true,
+			wait = true,
 		},
-		
+
 		TextChatMessageProperties = {
 			new = true,
 		},
@@ -441,18 +450,18 @@ return {
 		},
 
 		UDim2 = {
-			new = true,
-			fromScale = true,
 			fromOffset = true,
+			fromScale = true,
+			new = true,
 		},
 
 		Vector2 = {
 			new = true,
-			
+
 			one = true,
-			zero = true,
 			xAxis = true,
 			yAxis = true,
+			zero = true,
 		},
 
 		Vector2int16 = {
@@ -460,17 +469,17 @@ return {
 		},
 
 		Vector3 = {
-			new = true,
 			fromAxis = true,
-			fromNormalId = true,
 			FromAxis = true,
+			fromNormalId = true,
 			FromNormalId = true,
-			
+			new = true,
+
 			one = true,
-			zero = true,
 			xAxis = true,
 			yAxis = true,
 			zAxis = true,
+			zero = true,
 		},
 
 		Vector3int16 = {
@@ -478,3 +487,12 @@ return {
 		},
 	},
 }
+
+-- Filling up language.libraries.Enum table 
+local enumLibraryTable = language.libraries.Enum
+
+for _, enum in ipairs(Enum:GetEnums()) do
+	enumLibraryTable[tostring(enum)] = true --TODO: Remove tostring from here once there is a better way to get the name of an Enum
+end
+
+return language
