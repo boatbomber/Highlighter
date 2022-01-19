@@ -176,7 +176,7 @@ return setmetatable({
 	UpdateColors = updateColors,
 	Highlight = highlight
 }, {
-	__call = function(_, textObject: TextBox|Instance src: string?)
+	__call = function(_, textObject: TextBox|Instance, src: string?)
 		return highlight(textObject, src)
 	end
 })
