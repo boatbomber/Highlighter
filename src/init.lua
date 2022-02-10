@@ -1,8 +1,10 @@
 local Lexer = require(script.lexer)
 
-local TokenColors = table.create(7)
-local TokenFormats = table.create(7)
-local ActiveLabels = table.create(3)
+local TokenColors = {}
+local TokenFormats = {}
+local ActiveLabels = {}
+local LastText = {}
+local Cleanups = {}
 
 local function SanitizeRichText(s: string): string
 	return string.gsub(string.gsub(string.gsub(string.gsub(string.gsub(s,
@@ -24,6 +26,10 @@ end
 
 local function highlight(textObject: Instance, src: string?)
 	src = SanitizeTabs(SanitizeControl(src or textObject.Text))
+	if LastText[textObject] == src then
+		return
+	end
+	LastText[textObject] = src
 
 	textObject.RichText = false
 	textObject.Text = src
@@ -33,10 +39,17 @@ local function highlight(textObject: Instance, src: string?)
 	textObject.TextColor3 = TokenColors.iden
 	textObject.TextTransparency = 0.5
 
-	local textSize = textObject.TextSize
+	local lineFolder = textObject:FindFirstChild("SyntaxHighlights")
+	if not lineFolder then
+		lineFolder = Instance.new("Folder")
+		lineFolder.Name = "SyntaxHighlights"
+		lineFolder.Parent = textObject
+	end
 
 	local _, numLines = string.gsub(src, "\n", "")
 	numLines += 1
+
+	local textHeight = textObject.TextBounds.Y/numLines
 
 	local lineLabels = ActiveLabels[textObject]
 	if not lineLabels then
@@ -51,37 +64,34 @@ local function highlight(textObject: Instance, src: string?)
 			lineLabel.TextYAlignment = Enum.TextYAlignment.Top
 			lineLabel.TextColor3 = TokenColors.iden
 			lineLabel.Font = textObject.Font
-			lineLabel.TextSize = textSize
-			lineLabel.Size = UDim2.new(1, 0, 0, textSize)
-			lineLabel.Position = UDim2.fromOffset(0, (textSize * textObject.LineHeight) * (i - 1))
+			lineLabel.TextSize = textObject.TextSize
+			lineLabel.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
+			lineLabel.Position = UDim2.fromOffset(0, textHeight * (i - 1))
 			lineLabel.Text = ""
 
-			lineLabel.Parent = textObject
+			lineLabel.Parent = lineFolder
 			lineLabels[i] = lineLabel
 		end
-	elseif #lineLabels < numLines then
-		-- Existing labels, but missing some lines
-		for i = #lineLabels + 1, numLines do
-			local lineLabel = Instance.new("TextLabel")
-			lineLabel.Name = "Line_" .. i
-			lineLabel.RichText = true
-			lineLabel.BackgroundTransparency = 1
-			lineLabel.TextXAlignment = Enum.TextXAlignment.Left
-			lineLabel.TextYAlignment = Enum.TextYAlignment.Top
-			lineLabel.TextColor3 = TokenColors.iden
-			lineLabel.Font = textObject.Font
-			lineLabel.TextSize = textSize
-			lineLabel.Size = UDim2.new(1, 0, 0, textSize)
-			lineLabel.Position = UDim2.fromOffset(0, (textSize * textObject.LineHeight) * (i - 1))
-			lineLabel.Text = ""
+	else
+		for i=1, math.max(numLines, #lineLabels) do
+			local label = lineLabels[i]
+			if not label then
+				label = Instance.new("TextLabel")
+				label.Name = "Line_" .. i
+				label.RichText = true
+				label.BackgroundTransparency = 1
+				label.TextXAlignment = Enum.TextXAlignment.Left
+				label.TextYAlignment = Enum.TextYAlignment.Top
+				label.TextColor3 = TokenColors.iden
+				label.Font = textObject.Font
+				label.Parent = lineFolder
+				lineLabels[i] = label
+			end
 
-			lineLabel.Parent = textObject
-			lineLabels[i] = lineLabel
-		end
-	elseif #lineLabels > numLines then
-		-- Existing labels, with too many lines
-		for i = #lineLabels, numLines, -1 do
-			lineLabels[i].Text = ""
+			label.Text = ""
+			label.TextSize = textObject.TextSize
+			label.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
+			label.Position = UDim2.fromOffset(0, textHeight * (i - 1))
 		end
 	end
 
@@ -114,24 +124,35 @@ local function highlight(textObject: Instance, src: string?)
 
 	ActiveLabels[textObject] = lineLabels
 
-	local Cleanup
-	Cleanup = textObject.AncestryChanged:Connect(function()
-		if textObject.Parent then
-			return
-		end
-		ActiveLabels[textObject] = nil
-		Cleanup:Disconnect()
-	end)
+	local cleanup = Cleanups[textObject]
+	if not cleanup then
+		local connection
 
-	return function()
-		for _, label in ipairs(lineLabels) do
-			label:Destroy()
-		end
-		table.clear(lineLabels)
+		cleanup = function()
+			for _, label in ipairs(lineLabels) do
+				label:Destroy()
+			end
+			table.clear(lineLabels)
 
-		ActiveLabels[textObject] = nil
-		Cleanup:Disconnect()
+			ActiveLabels[textObject] = nil
+			LastText[textObject] = nil
+			Cleanups[textObject] = nil
+
+			if connection then
+				connection:Disconnect()
+			end
+		end
+		Cleanups[textObject] = cleanup
+
+		connection = textObject.AncestryChanged:Connect(function()
+			if textObject.Parent then
+				return
+			end
+			cleanup()
+		end)
 	end
+
+	return cleanup
 end
 
 export type HighlighterColors = {
