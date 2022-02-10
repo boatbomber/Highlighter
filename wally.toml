@@ -1,0 +1,8 @@
+[package]
+name = "boatbomber/Highlighter"
+description = "RichText highlighting Lua code with a pure Lua lexer"
+version = "0.4.3"
+license = "MIT"
+authors = ["boatbomber (https://boatbomber.com)"]
+registry = "https://github.com/upliftgames/wally-index"
+realm = "shared"
