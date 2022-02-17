@@ -122,6 +122,7 @@ local language = {
 		["Enum"] = true,
 		["Faces"] = true,
 		["FloatCurveKey"] = true,
+		["Font"] = true,
 		["Instance"] = true,
 		["NumberRange"] = true,
 		["NumberSequence"] = true,
@@ -138,7 +139,6 @@ local language = {
 		["Region3int16"] = true,
 		["RotationCurveKey"] = true,
 		["task"] = true,
-		["TextChatMessageProperties"] = true,
 		["TweenInfo"] = true,
 		["UDim"] = true,
 		["UDim2"] = true,
@@ -367,6 +367,11 @@ local language = {
 		FloatCurveKey = {
 			new = true,
 		},
+		
+		Font = {
+			fromEnum = true,
+			new = true,
+		},
 
 		Instance = {
 			new = true,
@@ -429,16 +434,13 @@ local language = {
 		},
 
 		task = {
+			cancel = true,
 			defer = true,
 			delay = true,
 			desynchronize = true,
 			spawn = true,
 			synchronize = true,
 			wait = true,
-		},
-
-		TextChatMessageProperties = {
-			new = true,
 		},
 
 		TweenInfo = {
