@@ -66,7 +66,7 @@ local function highlight(textObject: Instance, src: string?, forceUpdate: boolea
 			lineLabel.Font = textObject.Font
 			lineLabel.TextSize = textObject.TextSize
 			lineLabel.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
-			lineLabel.Position = UDim2.fromOffset(0, textHeight * (i - 1))
+			lineLabel.Position = UDim2.fromScale(0, textHeight * (i - 1) / textObject.AbsoluteSize.Y)
 			lineLabel.Text = ""
 
 			lineLabel.Parent = lineFolder
@@ -91,7 +91,7 @@ local function highlight(textObject: Instance, src: string?, forceUpdate: boolea
 			label.Text = ""
 			label.TextSize = textObject.TextSize
 			label.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
-			label.Position = UDim2.fromOffset(0, textHeight * (i - 1))
+			label.Position = UDim2.fromScale(0, textHeight * (i - 1) / textObject.AbsoluteSize.Y)
 		end
 	end
 
