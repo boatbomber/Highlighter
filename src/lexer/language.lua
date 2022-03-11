@@ -257,6 +257,7 @@ local language = {
 
 		table = {
 			clear = true,
+			clone = true,
 			concat = true,
 			create = true,
 			find = true,
