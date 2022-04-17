@@ -311,10 +311,6 @@ local language = {
 			new = true,
 		},
 
-		CellId = {
-			new = true,
-		},
-
 		CFrame = {
 			Angles = true,
 			fromAxisAngle = true,
@@ -397,10 +393,6 @@ local language = {
 		},
 
 		PhysicalProperties = {
-			new = true,
-		},
-
-		PluginDrag = {
 			new = true,
 		},
 
