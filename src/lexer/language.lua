@@ -24,6 +24,8 @@ local language = {
 		["true"] = true,
 		["until"] = true,
 		["while"] = true,
+		["type"] = true,
+		["typeof"] = true
 	},
 
 	builtin = {
@@ -47,7 +49,6 @@ local language = {
 		["setmetatable"] = true,
 		["tonumber"] = true,
 		["tostring"] = true,
-		["type"] = true,
 		["unpack"] = true,
 		["xpcall"] = true,
 
@@ -78,11 +79,10 @@ local language = {
 		["spawn"] = true,
 		["tick"] = true,
 		["time"] = true,
-		["typeof"] = true,
 		["UserSettings"] = true,
 		["wait"] = true,
 		["warn"] = true,
-
+		
 		-- Roblox Functions (Deprecated)
 		["Delay"] = true,
 		["ElapsedTime"] = true,
@@ -112,7 +112,6 @@ local language = {
 		["Axes"] = true,
 		["BrickColor"] = true,
 		["CatalogSearchParams"] = true,
-		["CellId"] = true,
 		["CFrame"] = true,
 		["Color3"] = true,
 		["ColorSequence"] = true,
@@ -130,7 +129,6 @@ local language = {
 		["OverlapParams"] = true,
 		["PathWaypoint"] = true,
 		["PhysicalProperties"] = true,
-		["PluginDrag"] = true,
 		["Random"] = true,
 		["Ray"] = true,
 		["RaycastParams"] = true,
