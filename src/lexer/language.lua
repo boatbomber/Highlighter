@@ -22,10 +22,10 @@ local language = {
 		["self"] = true,
 		["then"] = true,
 		["true"] = true,
-		["until"] = true,
-		["while"] = true,
 		["type"] = true,
 		["typeof"] = true
+		["until"] = true,
+		["while"] = true,
 	},
 
 	builtin = {
@@ -314,6 +314,7 @@ local language = {
 		CFrame = {
 			Angles = true,
 			fromAxisAngle = true,
+			fromEulerAngles = true,
 			fromEulerAnglesXYZ = true,
 			fromEulerAnglesYXZ = true,
 			fromMatrix = true,
