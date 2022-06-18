@@ -23,7 +23,7 @@ local language = {
 		["then"] = true,
 		["true"] = true,
 		["type"] = true,
-		["typeof"] = true
+		["typeof"] = true,
 		["until"] = true,
 		["while"] = true,
 	},
