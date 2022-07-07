@@ -43,6 +43,7 @@ local language = {
 		["print"] = true,
 		["rawequal"] = true,
 		["rawget"] = true,
+		["rawlen"] = true,
 		["rawset"] = true,
 		["select"] = true,
 		["setfenv"] = true,
