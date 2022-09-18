@@ -54,22 +54,6 @@ local Highlighter = {
 	defaultLexer = require(script.lexer),
 }
 
-function Highlighter.refresh(): ()
-	-- Rehighlight existing labels using latest colors
-	for textObject, data in pairs(LastData) do
-		for _, lineLabel in ipairs(data.Lines) do
-			lineLabel.TextColor3 = TokenColors["iden"]
-		end
-
-		Highlighter.highlight({
-			textObject = textObject,
-			src = data.Text,
-			forceUpdate = true,
-			lexer = data.Lexer,
-		})
-	end
-end
-
 function Highlighter.highlight(props: HighlightProps)
 	-- Gather props
 	local textObject = props.textObject
@@ -78,15 +62,14 @@ function Highlighter.highlight(props: HighlightProps)
 
 	-- Avoid updating when unnecessary
 	local data = LastData[textObject]
-	if not data then
+	if data == nil then
 		data = {
 			Text = "",
 			Lexer = lexer,
 			Lines = {},
 		}
 		LastData[textObject] = data
-	end
-	if props.forceUpdate ~= true and data.Text == src then
+	elseif props.forceUpdate ~= true and data.Text == src then
 		return
 	end
 
@@ -122,7 +105,7 @@ function Highlighter.highlight(props: HighlightProps)
 		textBounds = textObject.TextBounds
 	end
 
-	local textHeight = textBounds.Y / numLines
+	local textHeight = textBounds.Y / numLines * textObject.LineHeight
 
 	local lineLabels = LastData[textObject].Lines
 	for i = 1, math.max(numLines, #lineLabels) do
@@ -224,6 +207,15 @@ function Highlighter.highlight(props: HighlightProps)
 		)
 		table.insert(
 			connections,
+			textObject:GetPropertyChangedSignal("Text"):Connect(function()
+				Highlighter.highlight({
+					textObject = textObject,
+					lexer = lexer,
+				})
+			end)
+		)
+		table.insert(
+			connections,
 			textObject:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 				Highlighter.highlight({
 					textObject = textObject,
@@ -234,6 +226,22 @@ function Highlighter.highlight(props: HighlightProps)
 	end
 
 	return cleanup
+end
+
+function Highlighter.refresh(): ()
+	-- Rehighlight existing labels using latest colors
+	for textObject, data in pairs(LastData) do
+		for _, lineLabel in ipairs(data.Lines) do
+			lineLabel.TextColor3 = TokenColors["iden"]
+		end
+
+		Highlighter.highlight({
+			textObject = textObject,
+			src = data.Text,
+			forceUpdate = true,
+			lexer = data.Lexer,
+		})
+	end
 end
 
 function Highlighter.setTokenColors(colors: HighlighterColors)
