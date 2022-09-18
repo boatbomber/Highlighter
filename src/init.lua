@@ -1,18 +1,30 @@
-local Lexer = require(script.lexer)
+export type HighlighterColors = { [string]: Color3 }
 
-local TokenColors = {}
-local TokenFormats = {}
-local ActiveLabels = {}
-local LastText = {}
-local Cleanups = {}
+export type HighlightProps = {
+	textObject: TextLabel | TextBox,
+	src: string?,
+	forceUpdate: boolean?,
+	lexer: Lexer?,
+}
+
+export type Lexer = {
+	scan: (src: string) -> () -> (string, string),
+	navigator: () -> any,
+	finished: boolean?,
+}
+
+export type Highlighter = {
+	defaultLexer: Lexer,
+	setTokenColors: (colors: HighlighterColors?) -> (),
+	highlight: (props: HighlightProps) -> (() -> ())?,
+	refresh: () -> (),
+}
 
 local function SanitizeRichText(s: string): string
-	return string.gsub(string.gsub(string.gsub(string.gsub(string.gsub(s,
-		"&", "&amp;"),
-		"<", "&lt;"),
-		">", "&gt;"),
-		"\"", "&quot;"),
-		"'", "&apos;"
+	return string.gsub(
+		string.gsub(string.gsub(string.gsub(string.gsub(s, "&", "&amp;"), "<", "&lt;"), ">", "&gt;"), '"', "&quot;"),
+		"'",
+		"&apos;"
 	)
 end
 
@@ -24,13 +36,78 @@ local function SanitizeControl(s: string): string
 	return string.gsub(s, "[\0\1\2\3\4\5\6\7\8\11\12\13\14\15\16\17\18\19\20\21\22\23\24\25\26\27\28\29\30\31]+", "")
 end
 
-local function highlight(textObject: Instance, src: string?, forceUpdate: boolean?)
-	src = SanitizeTabs(SanitizeControl(src or textObject.Text))
-	if forceUpdate ~= true and LastText[textObject] == src then
+local TokenColors: HighlighterColors = {
+	["background"] = Color3.fromRGB(47, 47, 47),
+	["iden"] = Color3.fromRGB(234, 234, 234),
+	["keyword"] = Color3.fromRGB(215, 174, 255),
+	["builtin"] = Color3.fromRGB(131, 206, 255),
+	["string"] = Color3.fromRGB(196, 255, 193),
+	["number"] = Color3.fromRGB(255, 125, 125),
+	["comment"] = Color3.fromRGB(140, 140, 155),
+	["operator"] = Color3.fromRGB(255, 239, 148),
+}
+local ColorFormatter: { [Color3]: string } = {}
+local LastData: { [TextLabel | TextBox]: { Text: string, Lexer: Lexer?, Lines: { TextLabel } } } = {}
+local Cleanups: { [TextLabel | TextBox]: () -> () } = {}
+
+local Highlighter = {
+	defaultLexer = require(script.lexer),
+}
+
+function Highlighter.setTokenColors(colors: HighlighterColors)
+	for token, color in colors do
+		TokenColors[token] = color
+		ColorFormatter[color] = string.format(
+			'<font color="#%.2x%.2x%.2x">',
+			color.R * 255,
+			color.G * 255,
+			color.B * 255
+		) .. "%s</font>"
+	end
+
+	Highlighter.refresh()
+end
+
+function Highlighter.refresh(): ()
+	-- Rehighlight existing labels using latest colors
+	for textObject, data in pairs(LastData) do
+		for _, lineLabel in ipairs(data.Lines) do
+			lineLabel.TextColor3 = TokenColors["iden"]
+		end
+
+		Highlighter.highlight({
+			textObject = textObject,
+			src = data.Text,
+			forceUpdate = true,
+			lexer = data.Lexer,
+		})
+	end
+end
+
+function Highlighter.highlight(props: HighlightProps)
+	-- Gather props
+	local textObject = props.textObject
+	local src = SanitizeTabs(SanitizeControl(props.src or textObject.Text))
+	local lexer = props.lexer or Highlighter.defaultLexer
+
+	-- Avoid updating when unnecessary
+	local data = LastData[textObject]
+	if not data then
+		data = {
+			Text = "",
+			Lexer = lexer,
+			Lines = {},
+		}
+		LastData[textObject] = data
+	end
+	if props.forceUpdate ~= true and data.Text == src then
 		return
 	end
-	LastText[textObject] = src
 
+	data.Text = src
+	data.Lexer = lexer
+
+	-- Ensure valid object properties
 	textObject.RichText = false
 	textObject.Text = src
 	textObject.TextXAlignment = Enum.TextXAlignment.Left
@@ -39,65 +116,58 @@ local function highlight(textObject: Instance, src: string?, forceUpdate: boolea
 	textObject.TextColor3 = TokenColors.iden
 	textObject.TextTransparency = 0.5
 
+	-- Build the highlight labels
 	local lineFolder = textObject:FindFirstChild("SyntaxHighlights")
-	if not lineFolder then
-		lineFolder = Instance.new("Folder")
-		lineFolder.Name = "SyntaxHighlights"
-		lineFolder.Parent = textObject
+	if lineFolder == nil then
+		local newLineFolder = Instance.new("Folder")
+		newLineFolder.Name = "SyntaxHighlights"
+		newLineFolder.Parent = textObject
+
+		lineFolder = newLineFolder
 	end
 
 	local _, numLines = string.gsub(src, "\n", "")
 	numLines += 1
 
-	local textHeight = textObject.TextBounds.Y/numLines
+	-- Wait for TextBounds to be non-NaN and non-zero because Roblox
+	local textBounds = textObject.TextBounds
+	while (textBounds.Y ~= textBounds.Y) or (textBounds.Y < 1) do
+		task.wait()
+		textBounds = textObject.TextBounds
+	end
 
-	local lineLabels = ActiveLabels[textObject]
-	if not lineLabels then
-		-- No existing lineLabels, create all new
-		lineLabels = table.create(numLines)
-		for i = 1, numLines do
-			local lineLabel = Instance.new("TextLabel")
-			lineLabel.Name = "Line_" .. i
-			lineLabel.RichText = true
-			lineLabel.BackgroundTransparency = 1
-			lineLabel.TextXAlignment = Enum.TextXAlignment.Left
-			lineLabel.TextYAlignment = Enum.TextYAlignment.Top
-			lineLabel.TextColor3 = TokenColors.iden
-			lineLabel.Font = textObject.Font
-			lineLabel.TextSize = textObject.TextSize
-			lineLabel.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
-			lineLabel.Position = UDim2.fromScale(0, textHeight * (i - 1) / textObject.AbsoluteSize.Y)
-			lineLabel.Text = ""
+	local textHeight = textBounds.Y / numLines
 
-			lineLabel.Parent = lineFolder
-			lineLabels[i] = lineLabel
-		end
-	else
-		for i=1, math.max(numLines, #lineLabels) do
-			local label = lineLabels[i]
-			if not label then
-				label = Instance.new("TextLabel")
-				label.Name = "Line_" .. i
-				label.RichText = true
-				label.BackgroundTransparency = 1
-				label.TextXAlignment = Enum.TextXAlignment.Left
-				label.TextYAlignment = Enum.TextYAlignment.Top
-				label.TextColor3 = TokenColors.iden
-				label.Font = textObject.Font
-				label.Parent = lineFolder
-				lineLabels[i] = label
-			end
-
+	local lineLabels = LastData[textObject].Lines
+	for i = 1, math.max(numLines, #lineLabels) do
+		local label: TextLabel? = lineLabels[i]
+		if label ~= nil then
 			label.Text = ""
 			label.TextSize = textObject.TextSize
 			label.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
 			label.Position = UDim2.fromScale(0, textHeight * (i - 1) / textObject.AbsoluteSize.Y)
+		else
+			local newLabel = Instance.new("TextLabel")
+			newLabel.Name = "Line_" .. i
+			newLabel.RichText = true
+			newLabel.BackgroundTransparency = 1
+			newLabel.Text = ""
+			newLabel.TextXAlignment = Enum.TextXAlignment.Left
+			newLabel.TextYAlignment = Enum.TextYAlignment.Top
+			newLabel.TextColor3 = TokenColors["iden"]
+			newLabel.Font = textObject.Font
+			newLabel.TextSize = textObject.TextSize
+			newLabel.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
+			newLabel.Position = UDim2.fromScale(0, textHeight * (i - 1) / textObject.AbsoluteSize.Y)
+			newLabel.Parent = lineFolder
+			lineLabels[i] = newLabel
 		end
 	end
 
+	-- Lex and highlight appropriately
 	local richText, index, lineNumber = {}, 0, 1
-	for token, content in Lexer.scan(src) do
-		local Color = TokenColors[token] or TokenColors.iden
+	for token: string, content: string in lexer.scan(src) do
+		local Color = TokenColors[token] or TokenColors["iden"]
 
 		local lines = string.split(SanitizeRichText(content), "\n")
 		for l, line in ipairs(lines) do
@@ -111,8 +181,10 @@ local function highlight(textObject: Instance, src: string?, forceUpdate: boolea
 			end
 
 			index += 1
-			if Color ~= TokenColors.iden and string.find(line, "[%S%C]") then
-				richText[index] = string.format(TokenFormats[token], line)
+
+			-- Only add RichText tags when the color is non-default and the characters are non-whitespace
+			if Color ~= TokenColors["iden"] and string.find(line, "[%S%C]") then
+				richText[index] = string.format(ColorFormatter[Color], line)
 			else
 				richText[index] = line
 			end
@@ -122,82 +194,60 @@ local function highlight(textObject: Instance, src: string?, forceUpdate: boolea
 	-- Set final line
 	lineLabels[lineNumber].Text = table.concat(richText)
 
-	ActiveLabels[textObject] = lineLabels
-
+	-- Add a cleanup handler for this textObject
 	local cleanup = Cleanups[textObject]
 	if not cleanup then
-		local connection
-
-		cleanup = function()
+		local connections: { RBXScriptConnection } = {}
+		local function newCleanup()
 			for _, label in ipairs(lineLabels) do
 				label:Destroy()
 			end
 			table.clear(lineLabels)
+			lineLabels = nil
 
-			ActiveLabels[textObject] = nil
-			LastText[textObject] = nil
+			LastData[textObject] = nil
 			Cleanups[textObject] = nil
 
-			if connection then
+			for _, connection in connections do
 				connection:Disconnect()
 			end
+			table.clear(connections)
+			connections = nil
 		end
-		Cleanups[textObject] = cleanup
+		Cleanups[textObject] = newCleanup
+		cleanup = newCleanup
 
-		connection = textObject.AncestryChanged:Connect(function()
-			if textObject.Parent then
-				return
-			end
-			cleanup()
-		end)
+		table.insert(
+			connections,
+			textObject.AncestryChanged:Connect(function()
+				if textObject.Parent then
+					return
+				end
+
+				cleanup()
+			end)
+		)
+		table.insert(
+			connections,
+			textObject:GetPropertyChangedSignal("TextBounds"):Connect(function()
+				Highlighter.highlight({
+					textObject = textObject,
+					lexer = lexer,
+				})
+			end)
+		)
+		table.insert(
+			connections,
+			textObject:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+				Highlighter.highlight({
+					textObject = textObject,
+					lexer = lexer,
+				})
+			end)
+		)
 	end
 
 	return cleanup
 end
 
-export type HighlighterColors = {
-	background: Color3?,
-	iden: Color3?,
-	keyword: Color3?,
-	builtin: Color3?,
-	string: Color3?,
-	number: Color3?,
-	comment: Color3?,
-	operator: Color3?
-}
-
-local function updateColors(colors: HighlighterColors?)
-	-- Setup color data
-	TokenColors.background = (colors and colors.background) or Color3.fromRGB(47, 47, 47)
-	TokenColors.iden = (colors and colors.iden) or Color3.fromRGB(234, 234, 234)
-	TokenColors.keyword = (colors and colors.keyword) or Color3.fromRGB(215, 174, 255)
-	TokenColors.builtin = (colors and colors.builtin) or Color3.fromRGB(131, 206, 255)
-	TokenColors.string = (colors and colors.string) or Color3.fromRGB(196, 255, 193)
-	TokenColors.number = (colors and colors.number) or Color3.fromRGB(255, 125, 125)
-	TokenColors.comment = (colors and colors.comment) or Color3.fromRGB(140, 140, 155)
-	TokenColors.operator = (colors and colors.operator) or Color3.fromRGB(255, 239, 148)
-
-	for key, color in pairs(TokenColors) do
-		TokenFormats[key] = '<font color="#'
-			.. string.format("%.2x%.2x%.2x", color.R * 255, color.G * 255, color.B * 255)
-			.. '">%s</font>'
-	end
-
-	-- Rehighlight existing labels using latest colors
-	for label, lineLabels in pairs(ActiveLabels) do
-		for _, lineLabel in ipairs(lineLabels) do
-			lineLabel.TextColor3 = TokenColors.iden
-		end
-		highlight(label, label.Text, true)
-	end
-end
-pcall(updateColors)
-
-return setmetatable({
-	UpdateColors = updateColors,
-	Highlight = highlight
-}, {
-	__call = function(_, textObject: Instance, src: string?)
-		return highlight(textObject, src)
-	end
-})
+return Highlighter :: Highlighter

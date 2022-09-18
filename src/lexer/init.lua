@@ -151,7 +151,11 @@ function lexer.scan(s: string)
 					return t2, tok
 				end
 			end
+			-- No matches
+			return nil
 		end
+		-- Reached end
+		return nil
 	end
 end
 

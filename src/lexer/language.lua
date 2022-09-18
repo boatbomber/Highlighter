@@ -83,7 +83,7 @@ local language = {
 		["UserSettings"] = true,
 		["wait"] = true,
 		["warn"] = true,
-		
+
 		-- Roblox Functions (Deprecated)
 		["Delay"] = true,
 		["ElapsedTime"] = true,
@@ -364,7 +364,7 @@ local language = {
 		FloatCurveKey = {
 			new = true,
 		},
-		
+
 		Font = {
 			fromEnum = true,
 			new = true,
@@ -483,7 +483,7 @@ local language = {
 	},
 }
 
--- Filling up language.libraries.Enum table 
+-- Filling up language.libraries.Enum table
 local enumLibraryTable = language.libraries.Enum
 
 for _, enum in ipairs(Enum:GetEnums()) do
