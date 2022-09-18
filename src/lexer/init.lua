@@ -29,9 +29,10 @@ local lexer = {}
 
 local Prefix, Suffix, Cleaner = "^[%c%s]*", "[%c%s]*", "[%c%s]+"
 local UNICODE = "[%z\x01-\x7F\xC2-\xF4][\x80-\xBF]+"
-local NUMBER_A = "0x[%da-fA-F]+"
-local NUMBER_B = "%d+%.?%d*[eE][%+%-]?%d+"
-local NUMBER_C = "%d+[%._]?[%d_eE]*"
+local NUMBER_A = "0[xX][%da-fA-F_]+"
+local NUMBER_B = "0[bB][01_]+"
+local NUMBER_C = "%d+%.?%d*[eE][%+%-]?%d+"
+local NUMBER_D = "%d+[%._]?[%d_eE]*"
 local OPERATORS = "[:;<>/~%*%(%)%-={},%.#%^%+%%]+"
 local BRACKETS = "[%[%]]+" -- needs to be separate pattern from other operators or it'll mess up multiline strings
 local IDEN = "[%a_][%w_]*"
@@ -60,6 +61,7 @@ local lua_matches = {
 	{ Prefix .. NUMBER_A .. Suffix, "number" },
 	{ Prefix .. NUMBER_B .. Suffix, "number" },
 	{ Prefix .. NUMBER_C .. Suffix, "number" },
+	{ Prefix .. NUMBER_D .. Suffix, "number" },
 
 	-- Strings
 	{ Prefix .. STRING_EMPTY .. Suffix, "string" },
