@@ -54,20 +54,6 @@ local Highlighter = {
 	defaultLexer = require(script.lexer),
 }
 
-function Highlighter.setTokenColors(colors: HighlighterColors)
-	for token, color in colors do
-		TokenColors[token] = color
-		ColorFormatter[color] = string.format(
-			'<font color="#%.2x%.2x%.2x">',
-			color.R * 255,
-			color.G * 255,
-			color.B * 255
-		) .. "%s</font>"
-	end
-
-	Highlighter.refresh()
-end
-
 function Highlighter.refresh(): ()
 	-- Rehighlight existing labels using latest colors
 	for textObject, data in pairs(LastData) do
@@ -249,5 +235,20 @@ function Highlighter.highlight(props: HighlightProps)
 
 	return cleanup
 end
+
+function Highlighter.setTokenColors(colors: HighlighterColors)
+	for token, color in colors do
+		TokenColors[token] = color
+		ColorFormatter[color] = string.format(
+			'<font color="#%.2x%.2x%.2x">',
+			color.R * 255,
+			color.G * 255,
+			color.B * 255
+		) .. "%s</font>"
+	end
+
+	Highlighter.refresh()
+end
+Highlighter.setTokenColors(TokenColors)
 
 return Highlighter :: Highlighter
