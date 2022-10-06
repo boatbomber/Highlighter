@@ -98,7 +98,6 @@ local language = {
 		["ypcall"] = true,
 
 		-- Roblox Variables
-		["File"] = true,
 		["game"] = true,
 		["plugin"] = true,
 		["script"] = true,
@@ -367,6 +366,8 @@ local language = {
 
 		Font = {
 			fromEnum = true,
+			fromId = true,
+			fromName = true,
 			new = true,
 		},
 
