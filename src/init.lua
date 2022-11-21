@@ -102,6 +102,79 @@ function Highlighter.highlight(props: HighlightProps)
 		lineFolder = newLineFolder
 	end
 
+	-- Add a cleanup handler for this textObject
+	local cleanup = Cleanups[textObject]
+	if not cleanup then
+		local connections: { RBXScriptConnection } = {}
+		local function newCleanup()
+			for _, label in ipairs(lineLabels) do
+				label:Destroy()
+			end
+			table.clear(lineLabels)
+			lineLabels = nil
+
+			LastData[textObject] = nil
+			Cleanups[textObject] = nil
+
+			for _, connection in connections do
+				connection:Disconnect()
+			end
+			table.clear(connections)
+			connections = nil
+		end
+		Cleanups[textObject] = newCleanup
+		cleanup = newCleanup
+
+		table.insert(
+			connections,
+			textObject.AncestryChanged:Connect(function()
+				if textObject.Parent then
+					return
+				end
+
+				cleanup()
+			end)
+		)
+		table.insert(
+			connections,
+			textObject:GetPropertyChangedSignal("TextBounds"):Connect(function()
+				Highlighter.highlight({
+					textObject = textObject,
+					lexer = lexer,
+					forceUpdate = true,
+				})
+			end)
+		)
+		table.insert(
+			connections,
+			textObject:GetPropertyChangedSignal("Text"):Connect(function()
+				Highlighter.highlight({
+					textObject = textObject,
+					lexer = lexer,
+				})
+			end)
+		)
+		table.insert(
+			connections,
+			textObject:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+				Highlighter.highlight({
+					textObject = textObject,
+					lexer = lexer,
+					forceUpdate = true,
+				})
+			end)
+		)
+	end
+
+	-- Shortcut empty labels
+	if src == "" then
+		for l=1, #lineLabels do
+			if lineLabels[l].Text == "" then continue end
+			lineLabels[l].Text = ""
+		end
+		return cleanup
+	end
+
 	-- Wait for TextBounds to be non-NaN and non-zero because Roblox
 	local textBounds = textObject.TextBounds
 	while (textBounds.Y ~= textBounds.Y) or (textBounds.Y < 1) do
@@ -175,70 +248,6 @@ function Highlighter.highlight(props: HighlightProps)
 	for l=lineNumber+1, #lineLabels do
 		if lineLabels[l].Text == "" then continue end
 		lineLabels[l].Text = ""
-	end
-
-	-- Add a cleanup handler for this textObject
-	local cleanup = Cleanups[textObject]
-	if not cleanup then
-		local connections: { RBXScriptConnection } = {}
-		local function newCleanup()
-			for _, label in ipairs(lineLabels) do
-				label:Destroy()
-			end
-			table.clear(lineLabels)
-			lineLabels = nil
-
-			LastData[textObject] = nil
-			Cleanups[textObject] = nil
-
-			for _, connection in connections do
-				connection:Disconnect()
-			end
-			table.clear(connections)
-			connections = nil
-		end
-		Cleanups[textObject] = newCleanup
-		cleanup = newCleanup
-
-		table.insert(
-			connections,
-			textObject.AncestryChanged:Connect(function()
-				if textObject.Parent then
-					return
-				end
-
-				cleanup()
-			end)
-		)
-		table.insert(
-			connections,
-			textObject:GetPropertyChangedSignal("TextBounds"):Connect(function()
-				Highlighter.highlight({
-					textObject = textObject,
-					lexer = lexer,
-					forceUpdate = true,
-				})
-			end)
-		)
-		table.insert(
-			connections,
-			textObject:GetPropertyChangedSignal("Text"):Connect(function()
-				Highlighter.highlight({
-					textObject = textObject,
-					lexer = lexer,
-				})
-			end)
-		)
-		table.insert(
-			connections,
-			textObject:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-				Highlighter.highlight({
-					textObject = textObject,
-					lexer = lexer,
-					forceUpdate = true,
-				})
-			end)
-		)
 	end
 
 	return cleanup
