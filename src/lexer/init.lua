@@ -53,6 +53,8 @@ local lua_keyword = lang.keyword
 local lua_builtin = lang.builtin
 local lua_libraries = lang.libraries
 
+lexer.language = lang
+
 local lua_matches = {
 	-- Indentifiers
 	{ Prefix .. IDEN .. Suffix, "var" },
