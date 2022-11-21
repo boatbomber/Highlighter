@@ -72,6 +72,7 @@ function Highlighter.highlight(props: HighlightProps)
 	local src = SanitizeTabs(SanitizeControl(props.src or textObject.Text))
 	local lexer = props.lexer or Highlighter.defaultLexer
 	local customLang = props.customLang
+	local forceUpdate = props.forceUpdate
 
 	-- Avoid updating when unnecessary
 	local data = LastData[textObject]
@@ -84,7 +85,7 @@ function Highlighter.highlight(props: HighlightProps)
 			CustomLang = customLang,
 		}
 		LastData[textObject] = data
-	elseif props.forceUpdate ~= true and data.Text == src then
+	elseif forceUpdate ~= true and data.Text == src then
 		return
 	end
 
@@ -238,7 +239,7 @@ function Highlighter.highlight(props: HighlightProps)
 
 			-- If multiline token, then set line & move to next
 			if l > 1 then
-				if lines[lineNumber] ~= previousLines[lineNumber] then
+				if forceUpdate or lines[lineNumber] ~= previousLines[lineNumber] then
 					-- Set line
 					lineLabels[lineNumber].Text = table.concat(richText)
 				end
@@ -249,7 +250,7 @@ function Highlighter.highlight(props: HighlightProps)
 			end
 
 			-- If changed, add token to line
-			if lines[lineNumber] ~= previousLines[lineNumber] then
+			if forceUpdate or lines[lineNumber] ~= previousLines[lineNumber] then
 				index += 1
 				-- Only add RichText tags when the color is non-default and the characters are non-whitespace
 				if Color ~= TokenColors["iden"] and string.find(line, "[%S%C]") then
