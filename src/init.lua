@@ -47,7 +47,7 @@ local TokenColors: HighlighterColors = {
 	["operator"] = Color3.fromRGB(255, 239, 148),
 }
 local ColorFormatter: { [Color3]: string } = {}
-local LastData: { [TextLabel | TextBox]: { Text: string, Lexer: Lexer?, Lines: { TextLabel } } } = {}
+local LastData: { [TextLabel | TextBox]: { Text: string, Lexer: Lexer?, Labels: { TextLabel }, Lines: { string } } } = {}
 local Cleanups: { [TextLabel | TextBox]: () -> () } = {}
 
 local Highlighter = {
@@ -66,6 +66,7 @@ function Highlighter.highlight(props: HighlightProps)
 		data = {
 			Text = "",
 			Lexer = lexer,
+			Labels = {},
 			Lines = {},
 		}
 		LastData[textObject] = data
@@ -73,6 +74,12 @@ function Highlighter.highlight(props: HighlightProps)
 		return
 	end
 
+	local lineLabels = data.Labels
+	local previousLines = data.Lines
+
+	local lines = string.split(src, "\n")
+
+	data.Lines = lines
 	data.Text = src
 	data.Lexer = lexer
 
@@ -95,9 +102,6 @@ function Highlighter.highlight(props: HighlightProps)
 		lineFolder = newLineFolder
 	end
 
-	local _, numLines = string.gsub(src, "\n", "")
-	numLines += 1
-
 	-- Wait for TextBounds to be non-NaN and non-zero because Roblox
 	local textBounds = textObject.TextBounds
 	while (textBounds.Y ~= textBounds.Y) or (textBounds.Y < 1) do
@@ -105,63 +109,73 @@ function Highlighter.highlight(props: HighlightProps)
 		textBounds = textObject.TextBounds
 	end
 
+	local numLines = #lines
 	local textHeight = textBounds.Y / numLines * textObject.LineHeight
 
-	local lineLabels = LastData[textObject].Lines
-	for i = 1, math.max(numLines, #lineLabels) do
-		local label: TextLabel? = lineLabels[i]
-		if label ~= nil then
-			label.Text = ""
-			label.TextSize = textObject.TextSize
-			label.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
-			label.Position = UDim2.fromScale(0, textHeight * (i - 1) / textObject.AbsoluteSize.Y)
-		else
-			local newLabel = Instance.new("TextLabel")
-			newLabel.Name = "Line_" .. i
-			newLabel.RichText = true
-			newLabel.BackgroundTransparency = 1
-			newLabel.Text = ""
-			newLabel.TextXAlignment = Enum.TextXAlignment.Left
-			newLabel.TextYAlignment = Enum.TextYAlignment.Top
-			newLabel.TextColor3 = TokenColors["iden"]
-			newLabel.Font = textObject.Font
-			newLabel.TextSize = textObject.TextSize
-			newLabel.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
-			newLabel.Position = UDim2.fromScale(0, textHeight * (i - 1) / textObject.AbsoluteSize.Y)
-			newLabel.Parent = lineFolder
-			lineLabels[i] = newLabel
-		end
-	end
-
-	-- Lex and highlight appropriately
-	local richText, index, lineNumber = {}, 0, 1
+	local richText, index, lineNumber = table.create(5), 0, 1
 	for token: string, content: string in lexer.scan(src) do
 		local Color = TokenColors[token] or TokenColors["iden"]
 
-		local lines = string.split(SanitizeRichText(content), "\n")
-		for l, line in ipairs(lines) do
+		local tokenLines = string.split(SanitizeRichText(content), "\n")
+
+		for l, line in ipairs(tokenLines) do
+			-- Find line label
+			local lineLabel = lineLabels[lineNumber]
+			if not lineLabel then
+				local newLabel = Instance.new("TextLabel")
+				newLabel.Name = "Line_" .. lineNumber
+				newLabel.RichText = true
+				newLabel.BackgroundTransparency = 1
+				newLabel.Text = ""
+				newLabel.TextXAlignment = Enum.TextXAlignment.Left
+				newLabel.TextYAlignment = Enum.TextYAlignment.Top
+				newLabel.Parent = lineFolder
+				lineLabels[lineNumber] = newLabel
+				lineLabel = newLabel
+			end
+
+			-- Align line label
+			lineLabel.TextColor3 = TokenColors["iden"]
+			lineLabel.Font = textObject.Font
+			lineLabel.TextSize = textObject.TextSize
+			lineLabel.Size = UDim2.new(1, 0, 0, math.ceil(textHeight))
+			lineLabel.Position = UDim2.fromScale(0, textHeight * (lineNumber - 1) / textObject.AbsoluteSize.Y)
+
+			-- If multiline token, then set line & move to next
 			if l > 1 then
-				-- Set line
-				lineLabels[lineNumber].Text = table.concat(richText)
+				if lines[lineNumber] ~= previousLines[lineNumber] then
+					-- Set line
+					lineLabels[lineNumber].Text = table.concat(richText)
+				end
 				-- Move to next line
 				lineNumber += 1
 				index = 0
 				table.clear(richText)
 			end
 
-			index += 1
-
-			-- Only add RichText tags when the color is non-default and the characters are non-whitespace
-			if Color ~= TokenColors["iden"] and string.find(line, "[%S%C]") then
-				richText[index] = string.format(ColorFormatter[Color], line)
-			else
-				richText[index] = line
+			-- If changed, add token to line
+			if lines[lineNumber] ~= previousLines[lineNumber] then
+				index += 1
+				-- Only add RichText tags when the color is non-default and the characters are non-whitespace
+				if Color ~= TokenColors["iden"] and string.find(line, "[%S%C]") then
+					richText[index] = string.format(ColorFormatter[Color], line)
+				else
+					richText[index] = line
+				end
 			end
 		end
 	end
 
 	-- Set final line
-	lineLabels[lineNumber].Text = table.concat(richText)
+	if richText[1] and lineLabels[lineNumber] then
+		lineLabels[lineNumber].Text = table.concat(richText)
+	end
+
+	-- Clear unused line labels
+	for l=lineNumber+1, #lineLabels do
+		if lineLabels[l].Text == "" then continue end
+		lineLabels[l].Text = ""
+	end
 
 	-- Add a cleanup handler for this textObject
 	local cleanup = Cleanups[textObject]
@@ -202,6 +216,7 @@ function Highlighter.highlight(props: HighlightProps)
 				Highlighter.highlight({
 					textObject = textObject,
 					lexer = lexer,
+					forceUpdate = true,
 				})
 			end)
 		)
@@ -220,6 +235,7 @@ function Highlighter.highlight(props: HighlightProps)
 				Highlighter.highlight({
 					textObject = textObject,
 					lexer = lexer,
+					forceUpdate = true,
 				})
 			end)
 		)
@@ -231,7 +247,7 @@ end
 function Highlighter.refresh(): ()
 	-- Rehighlight existing labels using latest colors
 	for textObject, data in pairs(LastData) do
-		for _, lineLabel in ipairs(data.Lines) do
+		for _, lineLabel in ipairs(data.Labels) do
 			lineLabel.TextColor3 = TokenColors["iden"]
 		end
 
