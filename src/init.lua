@@ -1,10 +1,13 @@
 export type HighlighterColors = { [string]: Color3 }
 
+export type TextObject = TextLabel | TextBox
+
 export type HighlightProps = {
-	textObject: TextLabel | TextBox,
+	textObject: TextObject,
 	src: string?,
 	forceUpdate: boolean?,
 	lexer: Lexer?,
+	customLang: { [string]: string }?
 }
 
 export type Lexer = {
@@ -18,6 +21,14 @@ export type Highlighter = {
 	setTokenColors: (colors: HighlighterColors?) -> (),
 	highlight: (props: HighlightProps) -> (() -> ())?,
 	refresh: () -> (),
+}
+
+export type ObjectData = {
+	Text: string,
+	Labels: { TextLabel },
+	Lines: { string },
+	Lexer: Lexer?,
+	CustomLang: { [string]: string }?,
 }
 
 local function SanitizeRichText(s: string): string
@@ -45,10 +56,11 @@ local TokenColors: HighlighterColors = {
 	["number"] = Color3.fromRGB(255, 125, 125),
 	["comment"] = Color3.fromRGB(140, 140, 155),
 	["operator"] = Color3.fromRGB(255, 239, 148),
+	["custom"] = Color3.fromRGB(119, 122, 255),
 }
 local ColorFormatter: { [Color3]: string } = {}
-local LastData: { [TextLabel | TextBox]: { Text: string, Lexer: Lexer?, Labels: { TextLabel }, Lines: { string } } } = {}
-local Cleanups: { [TextLabel | TextBox]: () -> () } = {}
+local LastData: { [TextObject]: ObjectData } = {}
+local Cleanups: { [TextObject]: () -> () } = {}
 
 local Highlighter = {
 	defaultLexer = require(script.lexer),
@@ -59,15 +71,17 @@ function Highlighter.highlight(props: HighlightProps)
 	local textObject = props.textObject
 	local src = SanitizeTabs(SanitizeControl(props.src or textObject.Text))
 	local lexer = props.lexer or Highlighter.defaultLexer
+	local customLang = props.customLang
 
 	-- Avoid updating when unnecessary
 	local data = LastData[textObject]
 	if data == nil then
 		data = {
 			Text = "",
-			Lexer = lexer,
 			Labels = {},
 			Lines = {},
+			Lexer = lexer,
+			CustomLang = customLang,
 		}
 		LastData[textObject] = data
 	elseif props.forceUpdate ~= true and data.Text == src then
@@ -82,6 +96,7 @@ function Highlighter.highlight(props: HighlightProps)
 	data.Lines = lines
 	data.Text = src
 	data.Lexer = lexer
+	data.CustomLang = customLang
 
 	-- Ensure valid object properties
 	textObject.RichText = false
@@ -140,8 +155,9 @@ function Highlighter.highlight(props: HighlightProps)
 			textObject:GetPropertyChangedSignal("TextBounds"):Connect(function()
 				Highlighter.highlight({
 					textObject = textObject,
-					lexer = lexer,
 					forceUpdate = true,
+					lexer = lexer,
+					customLang = customLang,
 				})
 			end)
 		)
@@ -151,6 +167,7 @@ function Highlighter.highlight(props: HighlightProps)
 				Highlighter.highlight({
 					textObject = textObject,
 					lexer = lexer,
+					customLang = customLang,
 				})
 			end)
 		)
@@ -159,8 +176,9 @@ function Highlighter.highlight(props: HighlightProps)
 			textObject:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 				Highlighter.highlight({
 					textObject = textObject,
-					lexer = lexer,
 					forceUpdate = true,
+					lexer = lexer,
+					customLang = customLang,
 				})
 			end)
 		)
@@ -187,7 +205,11 @@ function Highlighter.highlight(props: HighlightProps)
 
 	local richText, index, lineNumber = table.create(5), 0, 1
 	for token: string, content: string in lexer.scan(src) do
-		local Color = TokenColors[token] or TokenColors["iden"]
+		local Color =
+			if customLang and customLang[content] then
+				TokenColors["custom"]
+			else
+				TokenColors[token] or TokenColors["iden"]
 
 		local tokenLines = string.split(SanitizeRichText(content), "\n")
 
@@ -262,9 +284,10 @@ function Highlighter.refresh(): ()
 
 		Highlighter.highlight({
 			textObject = textObject,
-			src = data.Text,
 			forceUpdate = true,
+			src = data.Text,
 			lexer = data.Lexer,
+			customLang = data.CustomLang,
 		})
 	end
 end
