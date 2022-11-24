@@ -201,6 +201,11 @@ function Highlighter.highlight(props: HighlightProps)
 		textBounds = textObject.TextBounds
 	end
 
+	if LastData[textObject] == nil then
+		-- Got cleaned up while we were waiting
+		return
+	end
+
 	local numLines = #lines
 	local textHeight = textBounds.Y / numLines * textObject.LineHeight
 
