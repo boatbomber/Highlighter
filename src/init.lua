@@ -203,7 +203,7 @@ function Highlighter.highlight(props: HighlightProps)
 
 	if LastData[textObject] == nil then
 		-- Got cleaned up while we were waiting
-		return
+		return cleanup
 	end
 
 	local numLines = #lines
