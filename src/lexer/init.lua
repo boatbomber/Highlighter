@@ -38,6 +38,7 @@ local BRACKETS = "[%[%]]+" -- needs to be separate pattern from other operators 
 local IDEN = "[%a_][%w_]*"
 local STRING_EMPTY = "(['\"])%1" --Empty String
 local STRING_PLAIN = "(['\"])[^\n]-([^\\]%1)" --TODO: Handle escaping escapes
+local STRING_INTER = "`[^\n]-`"
 local STRING_INCOMP_A = "(['\"]).-\n" --Incompleted String with next line
 local STRING_INCOMP_B = "(['\"])[^\n]*" --Incompleted String without next line
 local STRING_MULTI = "%[(=*)%[.-%]%1%]" --Multiline-String
@@ -72,6 +73,7 @@ local lua_matches = {
 	{ Prefix .. STRING_INCOMP_B .. Suffix, "string" },
 	{ Prefix .. STRING_MULTI .. Suffix, "string" },
 	{ Prefix .. STRING_MULTI_INCOMP .. Suffix, "string" },
+	{ Prefix .. STRING_INTER .. Suffix, "string_inter" },
 
 	-- Comments
 	{ Prefix .. COMMENT_MULTI .. Suffix, "comment" },
@@ -90,74 +92,138 @@ local lua_matches = {
 	{ "^.", "iden" },
 }
 
+-- To reduce the amount of table indexing during lexing, we separate the matches now
+local PATTERNS, TOKENS = {}, {}
+for i, m in lua_matches do
+	PATTERNS[i] = m[1]
+	TOKENS[i] = m[2]
+end
+
 --- Create a plain token iterator from a string.
 -- @tparam string s a string.
 
 function lexer.scan(s: string)
-	-- local startTime = os.clock()
-	lexer.finished = false
-
 	local index = 1
-	local sz = #s
-	local p1, p2, p3, pT = "", "", "", ""
+	local size = #s
+	local previousContent1, previousContent2, previousContent3, previousToken = "", "", "", ""
 
-	return function()
-		if index <= sz then
-			for _, m in ipairs(lua_matches) do
-				local i1, i2 = string.find(s, m[1], index)
-				if i1 then
-					local tok = string.sub(s, i1, i2)
-					index = i2 + 1
-					lexer.finished = index > sz
-					--if lexer.finished then
-					--	print((os.clock()-startTime)*1000, "ms")
-					--end
+	local thread = coroutine.create(function()
+		while index <= size do
+			local matched = false
+			for tokenType, pattern in ipairs(PATTERNS) do
+				-- Find match
+				local start, finish = string.find(s, pattern, index)
+				if start == nil then continue end
 
-					local t = m[2]
-					local t2 = t
+				-- Move head
+				index = finish + 1
+				matched = true
 
-					-- Process t into t2
-					if t == "var" then
-						-- Since we merge spaces into the tok, we need to remove them
-						-- in order to check the actual word it contains
-						local cleanTok = string.gsub(tok, Cleaner, "")
+				-- Gather results
+				local content = string.sub(s, start, finish)
+				local rawToken = TOKENS[tokenType]
+				local processedToken = rawToken
 
-						if lua_keyword[cleanTok] then
-							t2 = "keyword"
-						elseif lua_builtin[cleanTok] then
-							t2 = "builtin"
+				-- Process token
+				if rawToken == "var" then
+					-- Since we merge spaces into the tok, we need to remove them
+					-- in order to check the actual word it contains
+					local cleanContent = string.gsub(content, Cleaner, "")
+
+					if lua_keyword[cleanContent] then
+						processedToken = "keyword"
+					elseif lua_builtin[cleanContent] then
+						processedToken = "builtin"
+					elseif string.find(previousContent1, "%.[%s%c]*$") and previousToken ~= "comment" then
+						-- The previous was a . so we need to special case indexing things
+						local parent = string.gsub(previousContent2, Cleaner, "")
+						local lib = lua_libraries[parent]
+						if lib and lib[cleanContent] and not string.find(previousContent3, "%.[%s%c]*$") then
+							-- Indexing a builtin lib with existing item, treat as a builtin
+							processedToken = "builtin"
 						else
-							t2 = "iden"
+							-- Indexing a non builtin, can't be treated as a keyword/builtin
+							processedToken = "iden"
 						end
+						-- print("indexing",parent,"with",cleanTok,"as",t2)
+					else
+						processedToken = "iden"
+					end
+				elseif rawToken == "string_inter" then
+					if not string.find(content, "[^\\]{") then
+						-- This inter string doesnt actually have any inters
+						processedToken = "string"
+					else
+						-- We're gonna do our own yields, so the main loop won't need to
+						-- Our yields will be a mix of string and whatever is inside the inters
+						processedToken = nil
 
-						if string.find(p1, "%.[%s%c]*$") and pT ~= "comment" then
-							-- The previous was a . so we need to special case indexing things
-							local parent = string.gsub(p2, Cleaner, "")
-							local lib = lua_libraries[parent]
-							if lib and lib[cleanTok] and not string.find(p3, "%.[%s%c]*$") then
-								-- Indexing a builtin lib with existing item, treat as a builtin
-								t2 = "builtin"
-							else
-								-- Indexing a non builtin, can't be treated as a keyword/builtin
-								t2 = "iden"
+						local isString = true
+						local subIndex = 1
+						local subSize = #content
+						while subIndex <= subSize do
+							-- Find next brace
+							local subStart, subFinish = string.find(content, "^.-[^\\][{}]", subIndex)
+							if subStart == nil then
+								-- No more braces, all string
+								coroutine.yield("string", string.sub(content, subIndex))
+								break
 							end
-							-- print("indexing",parent,"with",cleanTok,"as",t2)
+
+							if isString then
+								-- We are currently a string
+								subIndex = subFinish + 1
+								coroutine.yield("string", string.sub(content, subStart, subFinish))
+
+								-- This brace opens code
+								isString = false
+							else
+								-- We are currently in code
+								subIndex = subFinish
+								local subContent = string.sub(content, subStart, subFinish-1)
+								for innerToken, innerContent in lexer.scan(subContent) do
+									coroutine.yield(innerToken, innerContent)
+								end
+
+								-- This brace opens string/closes code
+								isString = true
+							end
 						end
 					end
-
-					-- Record last 3 tokens for the indexing context check
-					p3 = p2
-					p2 = p1
-					p1 = tok
-					pT = t2
-					return t2, tok
 				end
+
+				-- Record last 3 tokens for the indexing context check
+				previousContent3 = previousContent2
+				previousContent2 = previousContent1
+				previousContent1 = content
+				previousToken = processedToken or rawToken
+				if processedToken then
+					coroutine.yield(processedToken, content)
+				end
+				break
 			end
-			-- No matches
-			return nil
+
+			-- No matches found
+			if not matched then
+				return
+			end
 		end
-		-- Reached end
-		return nil
+
+		-- Completed the scan
+		return
+	end)
+
+	return function()
+		if coroutine.status(thread) == "dead" then
+			return
+		end
+
+		local success, token, content = coroutine.resume(thread)
+		if success and token then
+			return token, content
+		end
+
+		return
 	end
 end
 
