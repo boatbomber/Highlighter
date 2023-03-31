@@ -225,6 +225,7 @@ function Highlighter.highlight(props: HighlightProps)
 			if not lineLabel then
 				local newLabel = Instance.new("TextLabel")
 				newLabel.Name = "Line_" .. lineNumber
+				newLabel.AutoLocalize = false
 				newLabel.RichText = true
 				newLabel.BackgroundTransparency = 1
 				newLabel.Text = ""
