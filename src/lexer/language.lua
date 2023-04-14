@@ -179,6 +179,7 @@ local language = {
 
 		debug = {
 			dumpheap = "function",
+			getmemorycategory = "function",
 			info = "function",
 			loadmodule = "function",
 			profilebegin = "function",
