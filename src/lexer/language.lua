@@ -136,6 +136,7 @@ local language = {
 		["Region3"] = "table",
 		["Region3int16"] = "table",
 		["RotationCurveKey"] = "table",
+		["SharedTable"] = "table",
 		["task"] = "table",
 		["TweenInfo"] = "table",
 		["UDim"] = "table",
@@ -426,6 +427,17 @@ local language = {
 
 		RotationCurveKey = {
 			new = "function",
+		},
+		
+		SharedTable = {
+			clear = "function",
+			clone = "function",
+			cloneAndFreeze = "function",
+			increment = "function",
+			isFrozen = "function",
+			new = "function",
+			size = "function",
+			update = "function",
 		},
 
 		task = {
