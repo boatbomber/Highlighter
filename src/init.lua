@@ -71,6 +71,9 @@ function Highlighter._populateLabels(props: types.HighlightProps)
 		end
 	end
 
+	-- Ensure textObject matches sanitized src
+	textObject.Text = src
+
 	local lineLabels = data.Labels
 	local previousLines = data.Lines
 
@@ -178,14 +181,8 @@ function Highlighter.highlight(props: types.HighlightProps): () -> ()
 	local customLang = props.customLang
 
 	-- Avoid updating when unnecessary
-	if Highlighter._textObjectData[textObject] then
-		-- Already been highlighted, so just update the labels
-		Highlighter._populateLabels(props)
-		Highlighter._alignLabels(textObject)
-		return Highlighter._cleanups[textObject]
-	end
 	if Highlighter._cleanups[textObject] then
-		-- Already been highlighted, so just update the labels
+		-- Already been initialized, so just update
 		Highlighter._populateLabels(props)
 		Highlighter._alignLabels(textObject)
 		return Highlighter._cleanups[textObject]
