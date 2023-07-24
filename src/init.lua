@@ -298,4 +298,15 @@ function Highlighter.getTokenColor(tokenName: types.TokenName): Color3
 	return theme.getColor(tokenName)
 end
 
+--[[
+	Matches the token colors to the Studio theme settings and refreshes all highlighted textObjects.
+	Does nothing when not run in a Studio plugin.
+]]
+function Highlighter.matchStudioSettings(): ()
+	local applied = theme.matchStudioSettings()
+	if applied then
+		Highlighter.refresh()
+	end
+end
+
 return Highlighter

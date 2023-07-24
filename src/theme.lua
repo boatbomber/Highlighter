@@ -33,8 +33,8 @@ function Theme.getColor(tokenName: types.TokenName): Color3
 	return Theme.tokenColors[tokenName]
 end
 
-function Theme.matchStudioSettings()
-	pcall(function()
+function Theme.matchStudioSettings(): boolean
+	local success = pcall(function()
 		-- When not used in a Studio plugin, this will error
 		-- and the pcall will just silently return
 		local studio = settings().Studio
@@ -60,10 +60,10 @@ function Theme.matchStudioSettings()
 			Theme.setColors(getTokens())
 		end)
 	end)
+    return success
 end
 
 -- Initialize
 Theme.setColors(DEFAULT_TOKEN_COLORS)
-Theme.matchStudioSettings()
 
 return Theme
