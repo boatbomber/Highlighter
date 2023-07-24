@@ -14,10 +14,14 @@ local Highlighter = {
 ]]
 function Highlighter._getLabelingInfo(textObject: types.TextObject)
 	local data = Highlighter._textObjectData[textObject]
-	if not data then return end
+	if not data then
+		return
+	end
 
 	local numLines = #data.Lines
-	if numLines == 0 then return end
+	if numLines == 0 then
+		return
+	end
 
 	local textBounds = utility.getTextBounds(textObject)
 	local textHeight = textBounds.Y / numLines
@@ -40,7 +44,9 @@ end
 ]]
 function Highlighter._alignLabels(textObject: types.TextObject)
 	local labelingInfo = Highlighter._getLabelingInfo(textObject)
-	if not labelingInfo then return end
+	if not labelingInfo then
+		return
+	end
 
 	for lineNumber, lineLabel in labelingInfo.data.Labels do
 		-- Align line label
@@ -48,7 +54,8 @@ function Highlighter._alignLabels(textObject: types.TextObject)
 		lineLabel.FontFace = labelingInfo.textFont
 		lineLabel.TextSize = labelingInfo.textSize
 		lineLabel.Size = labelingInfo.labelSize
-		lineLabel.Position = UDim2.fromScale(0, labelingInfo.textHeight * (lineNumber - 1) / labelingInfo.innerAbsoluteSize.Y)
+		lineLabel.Position =
+			UDim2.fromScale(0, labelingInfo.textHeight * (lineNumber - 1) / labelingInfo.innerAbsoluteSize.Y)
 	end
 end
 
@@ -122,7 +129,8 @@ function Highlighter._populateLabels(props: types.HighlightProps)
 				newLabel.FontFace = labelingInfo.textFont
 				newLabel.TextSize = labelingInfo.textSize
 				newLabel.Size = labelingInfo.labelSize
-				newLabel.Position = UDim2.fromScale(0, labelingInfo.textHeight * (lineNumber - 1) / labelingInfo.innerAbsoluteSize.Y)
+				newLabel.Position =
+					UDim2.fromScale(0, labelingInfo.textHeight * (lineNumber - 1) / labelingInfo.innerAbsoluteSize.Y)
 
 				newLabel.Parent = textObject.SyntaxHighlights
 				lineLabels[lineNumber] = newLabel

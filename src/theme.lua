@@ -60,7 +60,7 @@ function Theme.matchStudioSettings(): boolean
 			Theme.setColors(getTokens())
 		end)
 	end)
-    return success
+	return success
 end
 
 -- Initialize
