@@ -56,7 +56,7 @@ Does nothing when not run in a Studio plugin.
 **Types:**
 
 ```Lua
-export type TextObject = TextLabel | TextBox
+type TextObject = TextLabel | TextBox
 
 type TokenName =
     "background"
