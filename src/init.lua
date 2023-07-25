@@ -308,7 +308,7 @@ end
 	Does nothing when not run in a Studio plugin.
 ]]
 function Highlighter.matchStudioSettings(): ()
-	local applied = theme.matchStudioSettings()
+	local applied = theme.matchStudioSettings(Highlighter.refresh)
 	if applied then
 		Highlighter.refresh()
 	end

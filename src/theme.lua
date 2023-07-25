@@ -33,7 +33,7 @@ function Theme.getColor(tokenName: types.TokenName): Color3
 	return Theme.tokenColors[tokenName]
 end
 
-function Theme.matchStudioSettings(): boolean
+function Theme.matchStudioSettings(refreshCallback: () -> ()): boolean
 	local success = pcall(function()
 		-- When not used in a Studio plugin, this will error
 		-- and the pcall will just silently return
@@ -58,6 +58,7 @@ function Theme.matchStudioSettings(): boolean
 		studio.ThemeChanged:Connect(function()
 			studioTheme = studio.Theme
 			Theme.setColors(getTokens())
+            refreshCallback()
 		end)
 	end)
 	return success

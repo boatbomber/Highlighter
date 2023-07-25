@@ -1,4 +1,5 @@
 # Highlighter
+
 RichText highlighting Lua code with a pure Lua lexer
 
 ## Installation
@@ -7,7 +8,7 @@ Wally:
 
 ```toml
 [dependencies]
-Highlighter = "boatbomber/highlighter@0.8.0"
+Highlighter = "boatbomber/highlighter@0.8.1"
 ```
 
 Roblox Model:
