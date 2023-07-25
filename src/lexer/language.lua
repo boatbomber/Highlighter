@@ -428,7 +428,7 @@ local language = {
 		RotationCurveKey = {
 			new = "function",
 		},
-		
+
 		SharedTable = {
 			clear = "function",
 			clone = "function",

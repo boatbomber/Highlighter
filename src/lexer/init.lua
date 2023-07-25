@@ -113,7 +113,9 @@ function lexer.scan(s: string)
 			for tokenType, pattern in ipairs(PATTERNS) do
 				-- Find match
 				local start, finish = string.find(s, pattern, index)
-				if start == nil then continue end
+				if start == nil then
+					continue
+				end
 
 				-- Move head
 				index = finish + 1
@@ -180,7 +182,7 @@ function lexer.scan(s: string)
 							else
 								-- We are currently in code
 								subIndex = subFinish
-								local subContent = string.sub(content, subStart, subFinish-1)
+								local subContent = string.sub(content, subStart, subFinish - 1)
 								for innerToken, innerContent in lexer.scan(subContent) do
 									coroutine.yield(innerToken, innerContent)
 								end
