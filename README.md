@@ -8,7 +8,7 @@ Wally:
 
 ```toml
 [dependencies]
-Highlighter = "boatbomber/highlighter@0.8.2"
+Highlighter = "boatbomber/highlighter@0.8.3"
 ```
 
 Roblox Model:
