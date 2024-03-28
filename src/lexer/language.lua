@@ -167,6 +167,33 @@ local language = {
 			rshift = "function",
 		},
 
+		buffer = {
+			copy = "function",
+			create = "function",
+			fill = "function",
+			fromstring = "function",
+			len = "function",
+			readf32 = "function",
+			readf64 = "function",
+			readi8 = "function",
+			readi16 = "function",
+			readi32 = "function",
+			readu8 = "function",
+			readu16 = "function",
+			readu32 = "function",
+			readstring = "function",
+			tostring = "function",
+			writef32 = "function",
+			writef64 = "function",
+			writei8 = "function",
+			writei16 = "function",
+			writei32 = "function",
+			writestring = "function"
+			writeu8 = "function",
+			writeu16 = "function",
+			writeu32 = "function",
+		},
+
 		coroutine = {
 			close = "function",
 			create = "function",
