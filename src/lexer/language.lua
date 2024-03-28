@@ -178,20 +178,20 @@ local language = {
 			readi8 = "function",
 			readi16 = "function",
 			readi32 = "function",
-			readu8 = "function",
 			readu16 = "function",
 			readu32 = "function",
+			readu8 = "function",
 			readstring = "function",
 			tostring = "function",
 			writef32 = "function",
 			writef64 = "function",
-			writei8 = "function",
 			writei16 = "function",
 			writei32 = "function",
+			writei8 = "function",
 			writestring = "function"
-			writeu8 = "function",
 			writeu16 = "function",
 			writeu32 = "function",
+			writeu8 = "function",
 		},
 
 		coroutine = {
