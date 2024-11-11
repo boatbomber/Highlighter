@@ -8,7 +8,7 @@ Wally:
 
 ```toml
 [dependencies]
-Highlighter = "boatbomber/highlighter@0.8.3"
+Highlighter = "boatbomber/highlighter@0.9.0"
 ```
 
 Roblox Model:
@@ -27,6 +27,12 @@ function Highlighter.highlight(props: types.HighlightProps): () -> ()
 Highlights the given textObject with the given props and returns a cleanup function.
 Highlighting will automatically update when needed, so the cleanup function will disconnect
 those connections and remove all labels.
+
+```Lua
+function Highlighter.buildRichTextLines(props: types.BuildRichTextLinesProps): { string }
+```
+
+Builds rich text lines from the given props. Useful for building rich text highlight strings for other UI objects.
 
 ```Lua
 function Highlighter.refresh(): ()
@@ -88,6 +94,12 @@ type HighlightProps = {
     forceUpdate: boolean?,
     lexer: Lexer?,
     customLang: { [string]: string }?,
+}
+
+type BuildRichTextLinesProps = {
+ src: string,
+ lexer: Lexer?,
+ customLang: { [string]: string }?,
 }
 
 type Lexer = {

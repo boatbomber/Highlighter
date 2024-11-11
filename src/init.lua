@@ -178,6 +178,55 @@ function Highlighter._populateLabels(props: types.HighlightProps)
 end
 
 --[[
+	Builds rich text lines from the given source code.
+	Useful for cases where you want to render the labels yourself for something.
+]]
+function Highlighter.buildRichTextLines(props: types.BuildRichTextLinesProps): { string }
+	-- Gather props
+	local src = utility.convertTabsToSpaces(utility.removeControlChars(props.src))
+	local lexer = props.lexer or Highlighter.defaultLexer
+	local customLang = props.customLang
+	local idenColor = theme.getColor("iden")
+
+	local richTextLines = table.create(select(2, string.gsub(src, "\n", "\n")) + 1)
+	local richTextBuffer, bufferIndex = table.create(5), 0
+	local lineNumber = 1
+
+	for token: types.TokenName, content: string in lexer.scan(src) do
+		local Color = if customLang and customLang[content]
+			then theme.getColor("custom")
+			else theme.getColor(token) or idenColor
+
+		local tokenLines = string.split(utility.sanitizeRichText(content), "\n")
+
+		for l, tokenLine in tokenLines do
+			-- If multiline token, then set line & move to next
+			if l > 1 then
+				-- Set line
+				richTextLines[lineNumber] = table.concat(richTextBuffer)
+				-- Move to next line
+				lineNumber += 1
+				bufferIndex = 0
+				table.clear(richTextBuffer)
+			end
+
+			bufferIndex += 1
+			-- Only add RichText tags when the characters are non-whitespace
+			if string.find(tokenLine, "[%S%C]") then
+				richTextBuffer[bufferIndex] = theme.getColoredRichText(Color, tokenLine)
+			else
+				richTextBuffer[bufferIndex] = tokenLine
+			end
+		end
+	end
+
+	-- Set final line
+	richTextLines[lineNumber] = table.concat(richTextBuffer)
+
+	return richTextLines
+end
+
+--[[
 	Highlights the given textObject with the given props and returns a cleanup function.
 	Highlighting will automatically update when needed, so the cleanup function will disconnect
 	those connections and remove all labels.

@@ -1,15 +1,15 @@
 {
-    "name": "@boatbomber/highlighter",
-    "version": "0.8.3",
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/boatbomber/Highlighter.git"
-    },
-    "contributors": [
-        "boatbomber"
-    ],
-    "bugs": {
-        "url": "https://github.com/boatbomber/Highlighter/issues"
-    }
+  "name": "@boatbomber/highlighter",
+  "version": "0.9.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boatbomber/Highlighter.git"
+  },
+  "contributors": [
+    "boatbomber"
+  ],
+  "bugs": {
+    "url": "https://github.com/boatbomber/Highlighter/issues"
+  }
 }

@@ -31,6 +31,12 @@ export type HighlightProps = {
 	customLang: { [string]: string }?,
 }
 
+export type BuildRichTextLinesProps = {
+	src: string,
+	lexer: Lexer?,
+	customLang: { [string]: string }?,
+}
+
 export type Lexer = {
 	scan: (src: string) -> () -> (string, string),
 	navigator: () -> any,
