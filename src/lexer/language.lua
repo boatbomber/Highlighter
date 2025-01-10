@@ -62,6 +62,7 @@ local language = {
 
 		-- Luau Tables
 		["bit32"] = "table",
+		["buffer"] = "table",
 		["coroutine"] = "table",
 		["debug"] = "table",
 		["math"] = "table",
