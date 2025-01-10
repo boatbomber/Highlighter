@@ -69,6 +69,7 @@ local language = {
 		["string"] = "table",
 		["table"] = "table",
 		["utf8"] = "table",
+		["vector"] = "table",
 
 		-- Roblox Functions
 		["DebuggerManager"] = "function",
@@ -313,6 +314,25 @@ local language = {
 			offset = "function",
 
 			charpattern = "string",
+		},
+
+		vector = {
+			abs = "function",
+			angle = "function",
+			ceil = "function",
+			clamp = "function",
+			create = "function",
+			cross = "function",
+			dot = "function",
+			floor = "function",
+			magnitude = "function",
+			max = "function",
+			min = "function",
+			normalize = "function",
+			sign = "function",
+
+			one = "vector",
+			zero = "vector",
 		},
 
 		-- Roblox Libraries
