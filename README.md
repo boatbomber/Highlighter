@@ -15,7 +15,6 @@ Roblox Model:
 
 Download from [Releases](https://github.com/boatbomber/Highlighter/releases)
 
-
 ## API
 
 **Functions:**
@@ -103,7 +102,7 @@ type BuildRichTextLinesProps = {
 }
 
 type Lexer = {
-    scan: (src: string) -> () -> (string, string),
+    scan: (src: string, start: number?) -> () -> (string, string),
     navigator: () -> any,
     finished: boolean?,
 }
