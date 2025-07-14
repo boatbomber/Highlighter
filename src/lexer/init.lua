@@ -101,9 +101,10 @@ end
 
 --- Create a plain token iterator from a string.
 -- @tparam string s a string.
+-- @tparam number? start a start index, assumed to be properly aligned to the tokens.
 
-function lexer.scan(s: string)
-	local index = 1
+function lexer.scan(s: string, start: number?)
+	local index = start or 1
 	local size = #s
 	local previousContent1, previousContent2, previousContent3, previousToken = "", "", "", ""
 
@@ -256,6 +257,51 @@ function lexer.navigator()
 
 		self._ScanThread = coroutine.create(function()
 			for Token, Src in lexer.scan(self.Source) do
+				self._RealIndex += 1
+				self.TokenCache[self._RealIndex] = { Token, Src }
+				coroutine.yield(Token, Src)
+			end
+		end)
+	end
+
+	function nav:HotswapSource(newSource)
+		local oldSource = self.Source or ""
+		self.Source = newSource
+
+		local minimumLength, maximumLength = 0, math.min(#oldSource, #newSource)
+		while minimumLength < maximumLength do
+			local mid = (minimumLength + maximumLength + 1) // 2
+
+			if
+				oldSource:byte(mid) == newSource:byte(mid) -- cheap check of last character
+				and oldSource:sub(1, mid - 1) == newSource:sub(1, mid - 1) -- expensive check of all previous characters
+			then
+				minimumLength = mid
+			else
+				maximumLength = mid - 1
+			end
+		end
+
+		local lastSharedTokenIndex = 0
+		local sourceIndex = 0
+
+		-- find position of the last common token that is cached
+		for tokenIndex, cachedToken in self.TokenCache do
+			local sourceLength = #cachedToken[2]
+
+			if sourceIndex + sourceLength < minimumLength then
+				lastSharedTokenIndex = tokenIndex
+				sourceIndex += sourceLength
+			else
+				break
+			end
+		end
+
+		self._RealIndex = math.min(self._RealIndex, lastSharedTokenIndex)
+		self._UserIndex = 0
+
+		self._ScanThread = coroutine.create(function()
+			for Token, Src in lexer.scan(self.Source, sourceIndex) do
 				self._RealIndex += 1
 				self.TokenCache[self._RealIndex] = { Token, Src }
 				coroutine.yield(Token, Src)
