@@ -299,15 +299,15 @@ function lexer.navigator()
 		end
 
 		local lastSharedTokenIndex = 0
-		local sourceIndex = 0
+		local sourcePosition = 0
 
 		-- find position of the last common token that is cached
 		for tokenIndex, cachedToken in self.TokenCache do
 			local sourceLength = #cachedToken[2]
 
-			if sourceIndex + sourceLength < minimumLength then
+			if sourcePosition + sourceLength <= minimumLength then
 				lastSharedTokenIndex = tokenIndex
-				sourceIndex += sourceLength
+				sourcePosition += sourceLength
 			else
 				break
 			end
@@ -321,7 +321,7 @@ function lexer.navigator()
 			self.TokenCache[index] = nil
 		end
 
-		self:_createScanThread(sourceIndex)
+		self:_createScanThread(sourcePosition + 1)
 	end
 
 	function nav.Next()
