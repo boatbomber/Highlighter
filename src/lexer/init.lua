@@ -265,7 +265,19 @@ function lexer.navigator()
 	end
 
 	function nav:HotswapSource(newSource)
-		local oldSource = self.Source or ""
+		local oldSource = self.Source
+
+		if
+			not oldSource
+			or #oldSource == 0
+			or #newSource == 0
+			or string.byte(oldSource, 1) ~= string.byte(newSource, 1)
+		then
+			-- No common tokens to share, just set normally
+			self:SetSource(newSource)
+			return
+		end
+
 		self.Source = newSource
 
 		local minimumLength, maximumLength = 0, math.min(#oldSource, #newSource)
