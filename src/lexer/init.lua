@@ -264,29 +264,29 @@ function lexer.navigator()
 		end)
 	end
 
-	function nav:HotswapSource(newSource)
-		local oldSource = self.Source
+	function nav:HotswapSource(SourceString)
+		local previousSource = self.Source
 
 		if
-			not oldSource
-			or #oldSource == 0
-			or #newSource == 0
-			or string.byte(oldSource, 1) ~= string.byte(newSource, 1)
+			not previousSource
+			or #previousSource == 0
+			or #SourceString == 0
+			or string.byte(previousSource, 1) ~= string.byte(SourceString, 1)
 		then
 			-- No common tokens to share, just set normally
-			self:SetSource(newSource)
+			self:SetSource(SourceString)
 			return
 		end
 
-		self.Source = newSource
+		self.Source = SourceString
 
-		local minimumLength, maximumLength = 0, math.min(#oldSource, #newSource)
+		local minimumLength, maximumLength = 0, math.min(#previousSource, #SourceString)
 		while minimumLength < maximumLength do
 			local mid = (minimumLength + maximumLength + 1) // 2
 
 			if
-				oldSource:byte(mid) == newSource:byte(mid) -- cheap check of last character
-				and oldSource:sub(1, mid - 1) == newSource:sub(1, mid - 1) -- expensive check of all previous characters
+				string.byte(previousSource, mid) == string.byte(SourceString, mid) -- cheap check of last character
+				and string.sub(previousSource, 1, mid - 1) == string.sub(SourceString, 1, mid - 1) -- expensive check of all previous characters
 			then
 				minimumLength = mid
 			else
