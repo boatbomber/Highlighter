@@ -316,6 +316,11 @@ function lexer.navigator()
 		self._RealIndex = math.min(self._RealIndex, lastSharedTokenIndex)
 		self._UserIndex = 0
 
+		-- clear outdated tokens from the cache
+		for index = self._RealIndex + 1, #self.TokenCache do
+			self.TokenCache[index] = nil
+		end
+
 		self:_createScanThread(sourceIndex)
 	end
 
