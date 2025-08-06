@@ -240,6 +240,16 @@ function lexer.navigator()
 		_ScanThread = nil,
 	}
 
+	function nav:_createScanThread(StartPosition)
+		self._ScanThread = coroutine.create(function()
+			for Token, Src in lexer.scan(self.Source, StartPosition) do
+				self._RealIndex += 1
+				self.TokenCache[self._RealIndex] = { Token, Src }
+				coroutine.yield(Token, Src)
+			end
+		end)
+	end
+
 	function nav:Destroy()
 		self.Source = nil
 		self._RealIndex = nil
@@ -255,13 +265,7 @@ function lexer.navigator()
 		self._UserIndex = 0
 		table.clear(self.TokenCache)
 
-		self._ScanThread = coroutine.create(function()
-			for Token, Src in lexer.scan(self.Source) do
-				self._RealIndex += 1
-				self.TokenCache[self._RealIndex] = { Token, Src }
-				coroutine.yield(Token, Src)
-			end
-		end)
+		self:_createScanThread()
 	end
 
 	function nav:HotswapSource(SourceString)
@@ -312,13 +316,7 @@ function lexer.navigator()
 		self._RealIndex = math.min(self._RealIndex, lastSharedTokenIndex)
 		self._UserIndex = 0
 
-		self._ScanThread = coroutine.create(function()
-			for Token, Src in lexer.scan(self.Source, sourceIndex) do
-				self._RealIndex += 1
-				self.TokenCache[self._RealIndex] = { Token, Src }
-				coroutine.yield(Token, Src)
-			end
-		end)
+		self:_createScanThread(sourceIndex)
 	end
 
 	function nav.Next()
