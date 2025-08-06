@@ -101,10 +101,10 @@ end
 
 --- Create a plain token iterator from a string.
 -- @tparam string s a string.
--- @tparam number? start a start index, assumed to be properly aligned to the tokens.
+-- @tparam number? startIndex a start index, assumed to be properly aligned to the tokens.
 
-function lexer.scan(s: string, start: number?)
-	local index = start or 1
+function lexer.scan(s: string, startIndex: number?)
+	local index = startIndex or 1
 	local size = #s
 	local previousContent1, previousContent2, previousContent3, previousToken = "", "", "", ""
 

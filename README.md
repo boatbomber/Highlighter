@@ -102,7 +102,7 @@ type BuildRichTextLinesProps = {
 }
 
 type Lexer = {
-    scan: (src: string, start: number?) -> () -> (string, string),
+    scan: (src: string, startIndex: number?) -> () -> (string, string),
     navigator: () -> any,
     finished: boolean?,
 }
