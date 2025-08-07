@@ -58,7 +58,7 @@ function Theme.matchStudioSettings(refreshCallback: () -> ()): boolean
 		studio.ThemeChanged:Connect(function()
 			studioTheme = studio.Theme
 			Theme.setColors(getTokens())
-            refreshCallback()
+			refreshCallback()
 		end)
 	end)
 	return success
