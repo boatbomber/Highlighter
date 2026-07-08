@@ -111,6 +111,17 @@ describe("numbers", function()
 	it("keeps a marker in the middle of a literal on the same token", function()
 		expect(kindAt("local n = 3@@.14")).toBe("number")
 	end)
+
+	it("keeps malformed literals whole like Luau does", function()
+		-- Luau's lexer skips a number-like pattern greedily and reports the
+		-- whole thing as one malformed number, so highlighting matches that.
+		local cases = { "1.2.3", "3px", "1e", "0x", "12abc" }
+		for _, literal in cases do
+			local kind, text = tokenAt("local n = @@" .. literal)
+			expect(kind).toBe("number")
+			expect(text).toBe(literal)
+		end
+	end)
 end)
 
 describe("quoted strings", function()
@@ -145,6 +156,11 @@ describe("quoted strings", function()
 
 	it("continues a literal across an escaped line break", function()
 		expect(kindAt('local s = "line one\\\n@@still string"')).toBe("string")
+	end)
+
+	it("continues a literal across lines after a z escape", function()
+		expect(kindAt('local s = "one \\z\n   @@two"')).toBe("string")
+		expect(kindAt('local s = "one \\z\n   two" @@print(1)')).toBe("builtin")
 	end)
 end)
 
@@ -192,6 +208,12 @@ describe("interpolated strings", function()
 		expect(kindAt("local m = `esc \\` @@tick`")).toBe("string")
 	end)
 
+	it("keeps unicode escapes inside the string text", function()
+		expect(kindAt("local m = `snow \\u{@@2603} man`")).toBe("string")
+		expect(kindAt("local m = `snow \\u{2603} @@man`")).toBe("string")
+		expect(kindAt("local m = `snow \\u{2603} {@@x} end`")).toBe("iden")
+	end)
+
 	it("handles unfinished interpolated strings while typing", function()
 		expect(kindAt("local m = @@`unfinished")).toBe("string")
 		expect(kindAt("local m = `hi {@@count")).toBe("iden")
@@ -215,9 +237,15 @@ describe("Luau type operators", function()
 		expect(kindAt("local q = a @@// b")).toBe("operator")
 	end)
 
-	it("lexes attributes as operators", function()
+	it("lexes attributes as whole keyword tokens", function()
 		-- The first @@ is the marker, leaving the attribute's @ marked.
-		expect(kindAt("@@@native\nlocal function f() end")).toBe("operator")
+		local kind, text = tokenAt("@@@native\nlocal function f() end")
+		expect(kind).toBe("keyword")
+		expect(text).toBe("@native")
+	end)
+
+	it("keeps the at sign of an attribute list as an operator", function()
+		expect(kindAt("@@@[deprecated]\nlocal function f() end")).toBe("operator")
 	end)
 end)
 
@@ -298,6 +326,8 @@ describe("token stream coverage", function()
 			"--[[ open\nanything",
 			"@native\nlocal function f<T>(a: {T}, ...: number): (T, ...string)\n\treturn a[1], ...\nend",
 			"local café = 1 -- naïve comment 🚀",
+			'local s = "one \\z\n   two" .. `snow \\u{2603} {x} end`',
+			"local bad = 1.2.3 + 3px + 0x @native",
 			'local emoji = "🍕" .. `{"🎲"}`',
 			")(*&^ garbage $$ ## !!",
 			"type Point = { x: number, y: number }\nexport type Points = { Point }\nlocal p = point :: Point\nlocal d: { [string]: (Point) -> number } = {}",

@@ -29,22 +29,31 @@ Lexer.language = language
 -- The constant tables rebind as locals so the scanner's hot loops read
 -- upvalues instead of chasing module fields.
 local BYTE_NEWLINE = constants.BYTE_NEWLINE
+local BYTE_RETURN = constants.BYTE_RETURN
 local BYTE_QUOTE = constants.BYTE_QUOTE
 local BYTE_APOSTROPHE = constants.BYTE_APOSTROPHE
 local BYTE_BACKTICK = constants.BYTE_BACKTICK
 local BYTE_BACKSLASH = constants.BYTE_BACKSLASH
 local BYTE_DASH = constants.BYTE_DASH
+local BYTE_PLUS = constants.BYTE_PLUS
 local BYTE_DOT = constants.BYTE_DOT
+local BYTE_UNDERSCORE = constants.BYTE_UNDERSCORE
 local BYTE_EQUALS = constants.BYTE_EQUALS
 local BYTE_OPEN_PAREN = constants.BYTE_OPEN_PAREN
 local BYTE_OPEN_BRACE = constants.BYTE_OPEN_BRACE
 local BYTE_CLOSE_BRACE = constants.BYTE_CLOSE_BRACE
 local BYTE_OPEN_BRACKET = constants.BYTE_OPEN_BRACKET
 local BYTE_LESS_THAN = constants.BYTE_LESS_THAN
+local BYTE_AT = constants.BYTE_AT
+local BYTE_LOWER_E = constants.BYTE_LOWER_E
+local BYTE_UPPER_E = constants.BYTE_UPPER_E
+local BYTE_LOWER_U = constants.BYTE_LOWER_U
+local BYTE_LOWER_Z = constants.BYTE_LOWER_Z
 local IS_SPACE = constants.IS_SPACE
 local IS_DIGIT = constants.IS_DIGIT
 local IS_IDEN_START = constants.IS_IDEN_START
 local IS_IDEN_CHAR = constants.IS_IDEN_CHAR
+local IS_NUMBER_TAIL = constants.IS_NUMBER_TAIL
 local THREE_CHAR_OPERATORS = constants.THREE_CHAR_OPERATORS
 local TWO_CHAR_OPERATORS = constants.TWO_CHAR_OPERATORS
 local SINGLE_CHAR_OPERATORS = constants.SINGLE_CHAR_OPERATORS
@@ -304,69 +313,62 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 	end
 
 	--[[
-		Scans a numeric literal in any Luau notation, including hex, binary,
-		underscore separators, leading-dot decimals, and exponents.
+		Scans a numeric literal by skipping a number-like pattern exactly the
+		way Luau's own lexer does. It greedily takes digits, dots, and
+		underscores, then an exponent marker with an optional sign, then any
+		trailing alphanumeric run. That trailing run is what keeps hex and
+		binary notations whole and keeps malformed literals like 1.2.3 or 3px
+		lexing as a single number token, matching how Luau reports them.
 	]]
 	local function scanNumber()
 		typeofArmed = false
 		typeContinues = false
 		local start = index
 
-		local first = string.byte(source, index)
-		local second = string.byte(source, index + 1)
-		if first == string.byte("0") and (second == string.byte("x") or second == string.byte("X")) then
-			index += 2
-			while index <= size and string.find(string.sub(source, index, index), "[%x_]") ~= nil do
+		repeat
+			index += 1
+			local byte = string.byte(source, index)
+		until byte == nil or not (IS_DIGIT[byte] or byte == BYTE_DOT or byte == BYTE_UNDERSCORE)
+
+		local exponentByte = string.byte(source, index)
+		if exponentByte == BYTE_LOWER_E or exponentByte == BYTE_UPPER_E then
+			index += 1
+			local signByte = string.byte(source, index)
+			if signByte == BYTE_PLUS or signByte == BYTE_DASH then
 				index += 1
-			end
-		elseif first == string.byte("0") and (second == string.byte("b") or second == string.byte("B")) then
-			index += 2
-			while index <= size and string.find(string.sub(source, index, index), "[01_]") ~= nil do
-				index += 1
-			end
-		else
-			while index <= size do
-				local byte = string.byte(source, index)
-				if IS_DIGIT[byte] or byte == string.byte("_") then
-					index += 1
-				else
-					break
-				end
-			end
-			if string.byte(source, index) == BYTE_DOT then
-				index += 1
-				while index <= size do
-					local byte = string.byte(source, index)
-					if IS_DIGIT[byte] or byte == string.byte("_") then
-						index += 1
-					else
-						break
-					end
-				end
-			end
-			local exponent = string.byte(source, index)
-			if exponent == string.byte("e") or exponent == string.byte("E") then
-				local offset = 1
-				local signByte = string.byte(source, index + 1)
-				if signByte == string.byte("+") or signByte == BYTE_DASH then
-					offset = 2
-				end
-				local digitByte = string.byte(source, index + offset)
-				if digitByte ~= nil and IS_DIGIT[digitByte] then
-					index += offset
-					while index <= size do
-						local byte = string.byte(source, index)
-						if IS_DIGIT[byte] or byte == string.byte("_") then
-							index += 1
-						else
-							break
-						end
-					end
-				end
 			end
 		end
 
+		while index <= size and IS_NUMBER_TAIL[string.byte(source, index)] do
+			index += 1
+		end
+
 		emit("number", string.sub(source, start, index - 1))
+	end
+
+	--[[
+		Advances past a backslash escape inside a string, mirroring Luau's
+		readBackslashInString. An escaped carriage return also takes the line
+		feed after it, and a z escape swallows all following whitespace
+		including line breaks so the string continues on the next line.
+	]]
+	local function skipEscape()
+		local escapeByte = string.byte(source, index + 1)
+		if escapeByte == nil then
+			index += 1
+		elseif escapeByte == BYTE_RETURN then
+			index += 2
+			if string.byte(source, index) == BYTE_NEWLINE then
+				index += 1
+			end
+		elseif escapeByte == BYTE_LOWER_Z then
+			index += 2
+			while index <= size and IS_SPACE[string.byte(source, index)] do
+				index += 1
+			end
+		else
+			index += 2
+		end
 	end
 
 	--[[
@@ -383,8 +385,8 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 		while index <= size do
 			local byte = string.byte(source, index)
 			if byte == BYTE_BACKSLASH then
-				index += 2
-			elseif byte == quoteByte or byte == BYTE_NEWLINE then
+				skipEscape()
+			elseif byte == quoteByte or byte == BYTE_NEWLINE or byte == BYTE_RETURN then
 				index += 1
 				break
 			else
@@ -481,8 +483,17 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 		while index <= size do
 			local byte = string.byte(source, index)
 			if byte == BYTE_BACKSLASH then
-				index += 2
-			elseif byte == BYTE_BACKTICK or byte == BYTE_NEWLINE then
+				-- A unicode escape's brace belongs to the string text, so it
+				-- must not open an interpolation hole.
+				if
+					string.byte(source, index + 1) == BYTE_LOWER_U
+					and string.byte(source, index + 2) == BYTE_OPEN_BRACE
+				then
+					index += 3
+				else
+					skipEscape()
+				end
+			elseif byte == BYTE_BACKTICK or byte == BYTE_NEWLINE or byte == BYTE_RETURN then
 				index += 1
 				emit("string", string.sub(source, start, index - 1))
 				return nil
@@ -552,6 +563,28 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 		end
 		typeofArmed = false
 		typeContinues = TYPE_CONTINUERS[operator] == true
+	end
+
+	--[[
+		Scans an at sign, taking the attribute name with it when one follows
+		so @native lexes as a single token the way Luau's lexer reads it. A
+		bare at sign, including the one that opens an @[...] attribute list,
+		stays a lone operator.
+	]]
+	local function scanAttribute()
+		typeofArmed = false
+		typeContinues = false
+		local start = index
+		index += 1
+		local nameByte = string.byte(source, index)
+		if nameByte ~= nil and IS_IDEN_START[nameByte] then
+			repeat
+				index += 1
+			until index > size or not IS_IDEN_CHAR[string.byte(source, index)]
+			emit("keyword", string.sub(source, start, index - 1))
+		else
+			emit("operator", "@")
+		end
 	end
 
 	--[[
@@ -625,6 +658,8 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 			else
 				scanOperator()
 			end
+		elseif byte == BYTE_AT then
+			scanAttribute()
 		else
 			scanOperator()
 		end
