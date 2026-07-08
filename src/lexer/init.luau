@@ -63,9 +63,18 @@ local TYPE_EXPRESSION_KEYWORDS = constants.TYPE_EXPRESSION_KEYWORDS
 --[[
 	Scans one source string, calling yield(kind, content) for every token.
 	All scanner state lives in locals here so concurrent scans of different
-	sources never interfere.
+	sources never interfere. When a token ends at a safely resumable point,
+	its yield also carries the bracket depth there and the furthest byte the
+	scan has read, which is what lets the navigator resume a scan partway
+	through an edited source. The optional seed restores the state such a
+	resumed scan needs beyond its start position.
 ]]
-local function scanSource(source: string, yield: (string, string) -> (), startIndex: number?)
+local function scanSource(
+	source: string,
+	yield: (string, string, number?, number?) -> (),
+	startIndex: number?,
+	seed: Navigator.ScanSeed?
+)
 	local size = #source
 	local index = startIndex or 1
 
@@ -85,6 +94,28 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 	local depth = 0
 	local holeStack = {}
 
+	-- A resumed scan restores the depth and previous token texts it would
+	-- have had at this point in a full scan. The seeded texts include merged
+	-- trailing whitespace while a full scan's do not, but every read of them
+	-- strips or tolerates whitespace, so classification comes out the same.
+	if seed ~= nil then
+		depth = seed.depth
+		previousKind = seed.previousKind
+		previous1, previous2, previous3 = seed.previous1, seed.previous2, seed.previous3
+	end
+
+	-- The furthest byte position any lookahead has read. Restart snapshots
+	-- report it so the navigator can prove that a cached token, and the
+	-- scanner state after it, never depended on bytes that later changed.
+	local maxRead = 0
+
+	-- Snapshot of the resumable state at the start of the token currently
+	-- being scanned. When restartable, the previous token's yield carries it,
+	-- since the position right after that token is where a resume would begin.
+	local snapDepth = 0
+	local snapWatermark = 0
+	local snapRestartable = false
+
 	-- Type context state. While typeMode is on, identifiers lex as type
 	-- tokens until the context exits at its entry depth. typeAngle tracks
 	-- generic argument brackets, typeofDepth suspends type classification
@@ -101,7 +132,13 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 
 	local function flushQueued()
 		if queuedKind ~= nil then
-			yield(queuedKind, queuedText)
+			-- The snapshot rides along only when the position after this
+			-- token is a safe place to resume a scan from.
+			if snapRestartable then
+				yield(queuedKind, queuedText, snapDepth, snapWatermark)
+			else
+				yield(queuedKind, queuedText)
+			end
 			queuedKind, queuedText = nil, ""
 		end
 	end
@@ -153,6 +190,9 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 		while position <= size and IS_SPACE[string.byte(source, position)] do
 			position += 1
 		end
+		if position > maxRead then
+			maxRead = position
+		end
 		return position
 	end
 
@@ -170,6 +210,9 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 			position += 1
 			while position <= size and IS_IDEN_CHAR[string.byte(source, position)] do
 				position += 1
+			end
+			if position > maxRead then
+				maxRead = position
 			end
 			local afterSpace = skipSpace(position)
 			if string.byte(source, afterSpace) ~= BYTE_DOT then
@@ -224,6 +267,9 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 		while position <= size and IS_IDEN_CHAR[string.byte(source, position)] do
 			position += 1
 		end
+		if position > maxRead then
+			maxRead = position
+		end
 		position = skipSpace(position)
 		if string.byte(source, position) == BYTE_LESS_THAN then
 			local angle = 0
@@ -241,6 +287,9 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 				position += 1
 			end
 			position = skipSpace(position)
+		end
+		if position + 1 > maxRead then
+			maxRead = position + 1
 		end
 		return string.byte(source, position) == BYTE_EQUALS and string.byte(source, position + 1) ~= BYTE_EQUALS
 	end
@@ -414,6 +463,11 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 			level += 1
 			cursor += 1
 		end
+		-- The equals run can reach well past the byte the scanner ends up
+		-- consuming, so a failed match still counts as lookahead.
+		if cursor > maxRead then
+			maxRead = cursor
+		end
 		if string.byte(source, cursor) == BYTE_OPEN_BRACKET then
 			return level
 		end
@@ -432,7 +486,12 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 		if finish ~= nil then
 			index = finish + 1
 		else
+			-- The failed search read every remaining byte looking for the
+			-- closer, so the whole source counts as lookahead.
 			index = size + 1
+			if size > maxRead then
+				maxRead = size
+			end
 		end
 		local text = string.sub(source, start, index - 1)
 		emit(kind, text)
@@ -625,40 +684,55 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 			if string.find(run, "\n", 1, true) ~= nil then
 				checkTypeNewline()
 			end
-		elseif IS_IDEN_START[byte] then
-			scanIden()
-		elseif IS_DIGIT[byte] or (byte == BYTE_DOT and IS_DIGIT[string.byte(source, index + 1) or 0]) then
-			scanNumber()
-		elseif byte == BYTE_DASH and string.byte(source, index + 1) == BYTE_DASH then
-			scanComment()
-		elseif byte == BYTE_QUOTE or byte == BYTE_APOSTROPHE then
-			scanQuoted(byte)
-		elseif byte == BYTE_BACKTICK then
-			if scanInterpPiece() == "hole" then
-				table.insert(holeStack, depth)
-			end
-		elseif byte == BYTE_CLOSE_BRACE and holeStack[#holeStack] == depth then
-			table.remove(holeStack)
-			if typeMode and typeEntryDepth >= depth then
-				exitTypeMode()
-			end
-			if scanInterpPiece() == "hole" then
-				table.insert(holeStack, depth)
-			end
-		elseif byte == BYTE_OPEN_BRACKET then
-			local level = matchLongOpen(index)
-			if level ~= nil then
-				scanLongBracket("string", index, level, index + level + 2)
+		else
+			-- This byte starts a token, so the state here is what a resumed
+			-- scan would need. The point is restartable when every carried
+			-- flag is in its ground state, since depth is seedable and the
+			-- previous token texts come back from the navigator's cache. The
+			-- watermark adds two bytes of slack to cover the fixed peeks the
+			-- scan functions make past their consumed bytes.
+			snapDepth = depth
+			snapWatermark = math.max(maxRead, index + 2)
+			snapRestartable = not typeMode and holeStack[1] == nil and not aliasNamePending and not typeofArmed
+			if IS_IDEN_START[byte] then
+				scanIden()
+			elseif IS_DIGIT[byte] or (byte == BYTE_DOT and IS_DIGIT[string.byte(source, index + 1) or 0]) then
+				scanNumber()
+			elseif byte == BYTE_DASH and string.byte(source, index + 1) == BYTE_DASH then
+				scanComment()
+			elseif byte == BYTE_QUOTE or byte == BYTE_APOSTROPHE then
+				scanQuoted(byte)
+			elseif byte == BYTE_BACKTICK then
+				if scanInterpPiece() == "hole" then
+					table.insert(holeStack, depth)
+				end
+			elseif byte == BYTE_CLOSE_BRACE and holeStack[#holeStack] == depth then
+				table.remove(holeStack)
+				if typeMode and typeEntryDepth >= depth then
+					exitTypeMode()
+				end
+				if scanInterpPiece() == "hole" then
+					table.insert(holeStack, depth)
+				end
+			elseif byte == BYTE_OPEN_BRACKET then
+				local level = matchLongOpen(index)
+				if level ~= nil then
+					scanLongBracket("string", index, level, index + level + 2)
+				else
+					scanOperator()
+				end
+			elseif byte == BYTE_AT then
+				scanAttribute()
 			else
 				scanOperator()
 			end
-		elseif byte == BYTE_AT then
-			scanAttribute()
-		else
-			scanOperator()
 		end
 	end
 
+	-- The lingering snapshot belongs to the final token's own start, not to
+	-- the position after it, so the final flush must not carry it. A restart
+	-- at the very end of the source would have nothing to rescan anyway.
+	snapRestartable = false
 	flushQueued()
 	if pendingPrefix ~= "" then
 		yield("iden", pendingPrefix)
@@ -692,11 +766,43 @@ function Lexer.scan(source: string, startIndex: number?): () -> (string?, string
 end
 
 --[[
+	Creates a token iterator like Lexer.scan whose returns also carry restart
+	snapshots, and which accepts a seed for resuming a scan partway through a
+	source. The navigator reads through this richer form so HotswapSource can
+	reuse cached tokens, and nothing else needs it, so it stays local.
+]]
+local function scanRestartable(
+	source: string,
+	startIndex: number?,
+	seed: Navigator.ScanSeed?
+): () -> (string?, string, number?, number?)
+	local thread = coroutine.create(function()
+		scanSource(source, coroutine.yield, startIndex, seed)
+	end)
+
+	return function(): (string?, string, number?, number?)
+		if coroutine.status(thread) ~= "dead" then
+			-- The type checks narrow resume's untyped results. The first two
+			-- always pass since the scanner only yields string pairs, while
+			-- the snapshot values are genuinely absent on most tokens.
+			local success, kind, content, restartDepth, watermark = coroutine.resume(thread)
+			if success and type(kind) == "string" and type(content) == "string" then
+				return kind,
+					content,
+					if type(restartDepth) == "number" then restartDepth else nil,
+					if type(watermark) == "number" then watermark else nil
+			end
+		end
+		return nil, "", nil, nil
+	end
+end
+
+--[[
 	Builds a token navigator supporting non-sequential reads over a source,
 	caching scanned tokens so earlier ones can be revisited.
 ]]
 function Lexer.navigator()
-	return Navigator.new(Lexer.scan)
+	return Navigator.new(scanRestartable)
 end
 
 return Lexer

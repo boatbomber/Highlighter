@@ -482,6 +482,170 @@ describe("navigator", function()
 	end)
 end)
 
+--[[
+	Drains a navigator with Next and returns its kinds and contents as two
+	arrays, so two navigators can be compared token by token.
+]]
+local function drain(nav): ({ string }, { string })
+	local kinds, contents = {}, {}
+	local kind, content = nav:Next()
+	while kind ~= nil do
+		table.insert(kinds, kind)
+		table.insert(contents, content)
+		kind, content = nav:Next()
+	end
+	return kinds, contents
+end
+
+--[[
+	Fully scans oldSource through a navigator, hotswaps it to newSource, and
+	asserts the resulting token stream matches a fresh scan of newSource
+	exactly. When expectReuse is true it also asserts that cached tokens
+	survived the swap instead of the full rescan fallback running.
+]]
+local function expectHotswapMatchesFresh(oldSource: string, newSource: string, expectReuse: boolean?)
+	local swapped = lexer.navigator()
+	swapped:SetSource(oldSource)
+	while swapped:Next() ~= nil do
+	end
+
+	swapped:HotswapSource(newSource)
+	if expectReuse then
+		expect(swapped.realIndex > 0).toBe(true)
+	end
+
+	local fresh = lexer.navigator()
+	fresh:SetSource(newSource)
+
+	local swappedKinds, swappedContents = drain(swapped)
+	local freshKinds, freshContents = drain(fresh)
+	expect(swappedContents).toEqual(freshContents)
+	expect(swappedKinds).toEqual(freshKinds)
+end
+
+describe("hotswap reuse", function()
+	it("keeps cached tokens when the edit is near the end", function()
+		local body = string.rep("local x = math.floor(y) + 1\n", 30)
+		expectHotswapMatchesFresh(body .. "print(1)", body .. "print(2)", true)
+	end)
+
+	it("re-decides a colon whose lookahead crossed the edit", function()
+		-- In the old source the colon reads as a method access because call
+		-- arguments follow the name. The edit deletes them, which turns the
+		-- same colon into a type annotation, so reuse must stop before the
+		-- colon rather than trust tokens decided by bytes that changed.
+		expectHotswapMatchesFresh('local a = 1\nlocal r = obj:member ("x")', "local a = 1\nlocal r = obj:member ")
+	end)
+
+	it("reuses tokens inside an edited table literal", function()
+		local head = "local config = {\n" .. string.rep("\tenabled = true,\n\tcount = math.max(1, 2),\n", 12)
+		expectHotswapMatchesFresh(head .. '\tlabel = "old",\n}', head .. '\tlabel = "new",\n}', true)
+	end)
+
+	it("rescans an edited long string", function()
+		local head = "local a = 1\nlocal s = [[line one\nline two\n"
+		expectHotswapMatchesFresh(head .. "old]]\nprint(s)", head .. "new tail]]\nprint(s)")
+	end)
+
+	it("rescans an edited long comment", function()
+		local head = "local a = 1\n--[==[ note\n"
+		expectHotswapMatchesFresh(head .. "old ]==]\nprint(1)", head .. "new ]==]\nprint(1)")
+	end)
+
+	it("rescans an interpolated string edited inside a hole", function()
+		local head = "local a = 1\nlocal m = `sum {math.max(1, "
+		expectHotswapMatchesFresh(head .. "2)} done`", head .. "30)} done`")
+	end)
+
+	it("handles a whitespace only edit at the boundary", function()
+		expectHotswapMatchesFresh("local a = 1\nlocal b = 2", "local a = 1\nlocal b  = 2")
+	end)
+
+	it("handles a changed long bracket level", function()
+		expectHotswapMatchesFresh("local a = 1\nlocal s = [[text]]", "local a = 1\nlocal s = [=[text]=]")
+	end)
+
+	it("handles a shorter source that cuts a token in half", function()
+		local head = "local x = math.floor(1.5)\n"
+		expectHotswapMatchesFresh(head .. "local name = 123", head .. "local na")
+	end)
+
+	it("keeps everything when hotswapped to an identical source", function()
+		local source = string.rep("local x = math.floor(1.5)\n", 5)
+		local nav = lexer.navigator()
+		nav:SetSource(source)
+		while nav:Next() ~= nil do
+		end
+		local cachedCount = nav.realIndex
+
+		nav:HotswapSource(source)
+		expect(nav.realIndex).toBe(cachedCount)
+
+		local kind, content = nav:Next()
+		expect(kind).toBe("keyword")
+		expect(content).toBe("local ")
+	end)
+
+	it("hotswaps before anything was scanned", function()
+		local nav = lexer.navigator()
+		nav:SetSource("local x = 1")
+		nav:HotswapSource("local y = 2")
+
+		local fresh = lexer.navigator()
+		fresh:SetSource("local y = 2")
+
+		local swappedKinds, swappedContents = drain(nav)
+		local freshKinds, freshContents = drain(fresh)
+		expect(swappedContents).toEqual(freshContents)
+		expect(swappedKinds).toEqual(freshKinds)
+	end)
+
+	it("hotswaps after a partial scan", function()
+		local body = string.rep("local x = 1\n", 10)
+		local nav = lexer.navigator()
+		nav:SetSource(body .. "print(1)")
+		for _ = 1, 6 do
+			nav:Next()
+		end
+
+		nav:HotswapSource(body .. "print(2)")
+
+		local fresh = lexer.navigator()
+		fresh:SetSource(body .. "print(2)")
+
+		local swappedKinds, swappedContents = drain(nav)
+		local freshKinds, freshContents = drain(fresh)
+		expect(swappedContents).toEqual(freshContents)
+		expect(swappedKinds).toEqual(freshKinds)
+	end)
+
+	it("peeks in both directions after a hotswap", function()
+		local body = string.rep("local x = 1\n", 10)
+		local nav = lexer.navigator()
+		nav:SetSource(body .. "print(1)")
+		while nav:Next() ~= nil do
+		end
+		nav:HotswapSource(body .. "print(2)")
+		nav:Next()
+		nav:Next()
+
+		local fresh = lexer.navigator()
+		fresh:SetSource(body .. "print(2)")
+		fresh:Next()
+		fresh:Next()
+
+		local navKind, navContent = nav:Peek(1)
+		local freshKind, freshContent = fresh:Peek(1)
+		expect(navKind).toBe(freshKind)
+		expect(navContent).toBe(freshContent)
+
+		navKind, navContent = nav:Peek(-1)
+		freshKind, freshContent = fresh:Peek(-1)
+		expect(navKind).toBe(freshKind)
+		expect(navContent).toBe(freshContent)
+	end)
+end)
+
 describe("language tables", function()
 	it("exposes keywords, builtins, and libraries", function()
 		expect(lexer.language).toBeDefined()
