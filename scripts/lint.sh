@@ -8,7 +8,9 @@ if [ ! -f ".vscode/globalTypes.PluginSecurity.d.luau" ]; then
     curl -fsSL -o .vscode/globalTypes.PluginSecurity.d.luau https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.PluginSecurity.d.luau
 fi
 
-selene src
-stylua --check src
+# Analysis only covers src because the tests and scripts resolve requires
+# through the built test place rather than the checked-in sourcemap.
+selene src tests scripts
+stylua --check src tests scripts
 luau-lsp analyze --sourcemap sourcemap.json --defs .vscode/globalTypes.PluginSecurity.d.luau --flag:LuauSolverV2=true src
 luau-lsp analyze --sourcemap sourcemap.json --defs .vscode/globalTypes.PluginSecurity.d.luau src

@@ -11,10 +11,11 @@ local Theme = require(script.Parent.theme)
 
 local defaultLexer = require(script.Parent.lexer) :: types.Lexer
 
--- Control characters that normalize strips. Newlines and tabs are excluded
--- because newlines delimit lines and tabs convert to spaces instead. Carriage
--- returns are included, which is what turns CRLF line endings into plain LF.
-local CONTROL_CHARACTERS = "[\0\1\2\3\4\5\6\7\8\11\12\13\14\15\16\17\18\19\20\21\22\23\24\25\26\27\28\29\30\31]+"
+-- Control characters that normalize strips, including delete at 127. Newlines
+-- and tabs are excluded because newlines delimit lines and tabs convert to
+-- spaces instead. Carriage returns are included, which is what turns CRLF
+-- line endings into plain LF.
+local CONTROL_CHARACTERS = "[\0\1\2\3\4\5\6\7\8\11\12\13\14\15\16\17\18\19\20\21\22\23\24\25\26\27\28\29\30\31\127]+"
 
 local RichText = {}
 

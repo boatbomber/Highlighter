@@ -229,6 +229,32 @@ describe("automatic updates", function()
 		expect(getLineLabels(textObject)[3]).toBe(thirdLabel)
 	end)
 
+	it("rebuilds from the current text after highlighting with a src prop", function()
+		local textObject = makeTextObject("ignored")
+		Highlighter.highlight({ textObject = textObject, src = "local x = 1" })
+
+		textObject.Text = "print(1)"
+
+		local builtinHex = Highlighter.getTokenColor("builtin"):ToHex()
+		local updated = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[1]
+			return lineLabel ~= nil and string.find(lineLabel.Text, builtinHex, 1, true) ~= nil
+		end)
+		expect(updated).toBe(true)
+	end)
+
+	it("applies a new customLang on a repeated highlight call", function()
+		local textObject = makeTextObject("myFunc(1)")
+		Highlighter.highlight({ textObject = textObject })
+
+		local customHex = Highlighter.getTokenColor("custom"):ToHex()
+		expect(string.find(getLineLabels(textObject)[1].Text, customHex, 1, true)).toBe(nil)
+
+		Highlighter.highlight({ textObject = textObject, customLang = { myFunc = "custom" } })
+
+		expect(string.find(getLineLabels(textObject)[1].Text, customHex, 1, true) ~= nil).toBe(true)
+	end)
+
 	it("starts an empty source with no labels and fills in once text arrives", function()
 		local textObject = makeTextObject("")
 		Highlighter.highlight({ textObject = textObject })
@@ -270,6 +296,22 @@ describe("cleanup", function()
 end)
 
 describe("refresh", function()
+	it("rebuilds every tracked label when called directly", function()
+		local textObject = makeTextObject("local x = 1")
+		Highlighter.highlight({ textObject = textObject })
+
+		local lineLabel = getLineLabels(textObject)[1]
+		lineLabel.Text = "tampered"
+
+		Highlighter.refresh()
+
+		local keywordHex = Highlighter.getTokenColor("keyword"):ToHex()
+		local rebuilt = waitUntil(function()
+			return string.find(lineLabel.Text, keywordHex, 1, true) ~= nil
+		end)
+		expect(rebuilt).toBe(true)
+	end)
+
 	it("applies new token colors to existing labels", function()
 		local savedKeyword = Highlighter.getTokenColor("keyword")
 		local textObject = makeTextObject("local x = 1")

@@ -203,10 +203,13 @@ print(string.format("  %.1fx faster than the full rescan", fullRescanBest / hots
 local headOld = "local head = 1\n" .. source
 local headNew = "local head = 2\n" .. source
 
-summarize("Navigator hotswap, head edit", measure(scannedNavigator(headOld), function(nav)
-	nav:HotswapSource(headNew)
-	drainNavigator(nav)
-end))
+summarize(
+	"Navigator hotswap, head edit",
+	measure(scannedNavigator(headOld), function(nav)
+		nav:HotswapSource(headNew)
+		drainNavigator(nav)
+	end)
+)
 print("  the edit lands before every restart point, so this measures the full rescan fallback")
 
 -- run-in-roblox can drop log output that is still queued when the place

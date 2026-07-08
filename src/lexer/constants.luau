@@ -93,6 +93,7 @@ return {
 	BYTE_CLOSE_BRACE = string.byte("}"),
 	BYTE_OPEN_BRACKET = string.byte("["),
 	BYTE_LESS_THAN = string.byte("<"),
+	BYTE_GREATER_THAN = string.byte(">"),
 	BYTE_AT = string.byte("@"),
 	BYTE_LOWER_E = string.byte("e"),
 	BYTE_UPPER_E = string.byte("E"),

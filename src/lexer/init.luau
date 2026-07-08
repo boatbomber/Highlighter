@@ -44,6 +44,7 @@ local BYTE_OPEN_BRACE = constants.BYTE_OPEN_BRACE
 local BYTE_CLOSE_BRACE = constants.BYTE_CLOSE_BRACE
 local BYTE_OPEN_BRACKET = constants.BYTE_OPEN_BRACKET
 local BYTE_LESS_THAN = constants.BYTE_LESS_THAN
+local BYTE_GREATER_THAN = constants.BYTE_GREATER_THAN
 local BYTE_AT = constants.BYTE_AT
 local BYTE_LOWER_E = constants.BYTE_LOWER_E
 local BYTE_UPPER_E = constants.BYTE_UPPER_E
@@ -277,7 +278,7 @@ local function scanSource(
 				local angleByte = string.byte(source, position)
 				if angleByte == BYTE_LESS_THAN then
 					angle += 1
-				elseif angleByte == string.byte(">") then
+				elseif angleByte == BYTE_GREATER_THAN then
 					angle -= 1
 					if angle == 0 then
 						position += 1
@@ -526,6 +527,21 @@ local function scanSource(
 	end
 
 	--[[
+		Emits one interpolated string piece running from start to the current
+		index, ending the type context when the piece carried a line break the
+		way every other string and comment scanner does. A piece can hold a
+		line break as the bare one that terminated an unfinished string or
+		through an escape like a backslash z.
+	]]
+	local function emitInterpPiece(start: number)
+		local text = string.sub(source, start, index - 1)
+		emit("string", text)
+		if string.find(text, "\n", 1, true) ~= nil then
+			checkTypeNewline()
+		end
+	end
+
+	--[[
 		Scans one string piece of an interpolated string, starting at the
 		opening backtick or at the brace that just closed a hole. Returns
 		"hole" when the piece ends by opening a hole, and nil when the
@@ -551,17 +567,17 @@ local function scanSource(
 				end
 			elseif byte == BYTE_BACKTICK or byte == BYTE_NEWLINE or byte == BYTE_RETURN then
 				index += 1
-				emit("string", string.sub(source, start, index - 1))
+				emitInterpPiece(start)
 				return nil
 			elseif byte == BYTE_OPEN_BRACE then
 				index += 1
-				emit("string", string.sub(source, start, index - 1))
+				emitInterpPiece(start)
 				return "hole"
 			else
 				index += 1
 			end
 		end
-		emit("string", string.sub(source, start, index - 1))
+		emitInterpPiece(start)
 		return nil
 	end
 

@@ -37,19 +37,21 @@ local function getInnerAbsoluteSize(textObject: types.TextObject): Vector2
 end
 
 --[[
-	Grabs the text bounds of the given textObject, yielding until the engine
-	reports a usable value since bounds can briefly read as zero or NaN.
+	Grabs the text bounds of the given textObject. The engine computes bounds
+	asynchronously, so they can briefly read as zero or NaN. Rather than
+	yielding here, invalid bounds fall back to an estimate from TextSize, and
+	the TextBounds property connection realigns the labels once the engine
+	reports real values. Never yielding also keeps label population atomic, so
+	rapid text changes cannot interleave their label writes.
 ]]
-local function getTextBounds(textObject: types.TextObject): Vector2
+local function getTextBounds(textObject: types.TextObject, numLines: number): Vector2
 	if textObject.ContentText == "" then
 		return Vector2.zero
 	end
 
 	local textBounds = textObject.TextBounds
-
-	while (textBounds.Y ~= textBounds.Y) or (textBounds.Y < 1) do
-		task.wait()
-		textBounds = textObject.TextBounds
+	if (textBounds.Y ~= textBounds.Y) or (textBounds.Y < 1) then
+		return Vector2.new(0, textObject.TextSize * numLines)
 	end
 	return textBounds
 end
@@ -65,11 +67,8 @@ local function getLabelingInfo(textObject: types.TextObject): types.LabelingInfo
 
 	local src = RichText.normalize(textObject.Text)
 	local numLines = #string.split(src, "\n")
-	if numLines == 0 then
-		return nil
-	end
 
-	local textBounds = getTextBounds(textObject)
+	local textBounds = getTextBounds(textObject, numLines)
 	local textHeight = textBounds.Y / numLines
 
 	return {
@@ -86,6 +85,19 @@ local function getLabelingInfo(textObject: types.TextObject): types.LabelingInfo
 end
 
 --[[
+	Computes a line label's position from the labeling info. A zero inner
+	height would divide into NaN, so the labels pin to the top until the
+	AbsoluteSize connection realigns them against a real size.
+]]
+local function getLabelPosition(labelingInfo: types.LabelingInfo, lineNumber: number): UDim2
+	local innerHeight = labelingInfo.innerAbsoluteSize.Y
+	if innerHeight <= 0 then
+		return UDim2.fromScale(0, 0)
+	end
+	return UDim2.fromScale(0, labelingInfo.textHeight * (lineNumber - 1) / innerHeight)
+end
+
+--[[
 	Aligns and matches the line labels to the textObject.
 ]]
 local function alignLabels(textObject: types.TextObject)
@@ -99,8 +111,7 @@ local function alignLabels(textObject: types.TextObject)
 		lineLabel.FontFace = labelingInfo.textFont
 		lineLabel.TextSize = labelingInfo.textSize
 		lineLabel.Size = labelingInfo.labelSize
-		lineLabel.Position =
-			UDim2.fromScale(0, labelingInfo.textHeight * (lineNumber - 1) / labelingInfo.innerAbsoluteSize.Y)
+		lineLabel.Position = getLabelPosition(labelingInfo, lineNumber)
 	end
 end
 
@@ -109,18 +120,23 @@ end
 ]]
 local function populateLabels(props: types.HighlightProps)
 	local textObject = props.textObject
-	local src = RichText.normalize(props.src or textObject.Text)
-	local lexer = props.lexer or defaultLexer
-	local customLang = props.customLang
-	local forceUpdate = props.forceUpdate
 
-	-- Untracked textObjects have nothing to populate, and unchanged sources
-	-- skip the whole update unless the caller forces one.
+	-- Untracked textObjects have nothing to populate.
 	local data = textObjectData[textObject]
 	if data == nil then
 		return
 	end
-	if data.Text == src and forceUpdate ~= true then
+
+	local src = RichText.normalize(props.src or textObject.Text)
+	local lexer = props.lexer or defaultLexer
+	local customLang = props.customLang
+
+	-- A changed lexer or customLang invalidates every existing line, so it
+	-- forces a full rebuild, while a source change alone lets the line diff
+	-- below skip unchanged lines. When nothing changed at all, the update
+	-- skips entirely unless the caller forces one.
+	local forceUpdate = props.forceUpdate == true or lexer ~= data.Lexer or customLang ~= data.CustomLang
+	if data.Text == src and not forceUpdate then
 		return
 	end
 
@@ -181,8 +197,7 @@ local function populateLabels(props: types.HighlightProps)
 		newLabel.FontFace = labelingInfo.textFont
 		newLabel.TextSize = labelingInfo.textSize
 		newLabel.Size = labelingInfo.labelSize
-		newLabel.Position =
-			UDim2.fromScale(0, labelingInfo.textHeight * (lineNumber - 1) / labelingInfo.innerAbsoluteSize.Y)
+		newLabel.Position = getLabelPosition(labelingInfo, lineNumber)
 
 		newLabel.Parent = textObject:FindFirstChild("SyntaxHighlights")
 		lineLabels[lineNumber] = newLabel
@@ -195,7 +210,7 @@ local function populateLabels(props: types.HighlightProps)
 		customLang = customLang,
 		alwaysTagText = false,
 		shouldBuildLine = function(lineNumber: number): boolean
-			return forceUpdate == true or lines[lineNumber] ~= previousLines[lineNumber]
+			return forceUpdate or lines[lineNumber] ~= previousLines[lineNumber]
 		end,
 		onLine = function(lineNumber: number, richText: string?)
 			-- Labels exist for every line, while text only writes on lines
@@ -290,7 +305,14 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 		cleanup()
 	end)
 	connections["TextChanged"] = textObject:GetPropertyChangedSignal("Text"):Connect(function()
-		populateLabels(props)
+		-- The rebuild reads the live text with the latest stored lexer and
+		-- customLang, so a src prop from the original call never pins text
+		-- changes to a stale source.
+		populateLabels({
+			textObject = textObject,
+			lexer = data.Lexer,
+			customLang = data.CustomLang,
+		})
 	end)
 	connections["TextBoundsChanged"] = textObject:GetPropertyChangedSignal("TextBounds"):Connect(function()
 		alignLabels(textObject)

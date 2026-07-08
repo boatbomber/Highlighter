@@ -313,27 +313,52 @@ describe("value positions", function()
 	end)
 end)
 
+-- Awkward sources shared by the coverage and scanEach agreement tests.
+local COVERAGE_SOURCES = {
+	"local x: number? = nil",
+	"local u: { [string]: number } | nil = {}",
+	'local s = "say \\"hi\\"" .. "C:\\\\" .. `sum {math.max(1, 2)} done`',
+	'local m = `braces { {1, 2} } and {("}")} tricky`',
+	"local m = `unfinished {count",
+	'local s = "oops\nprint(1)',
+	"local s = [=[ never closed\ncode here",
+	"--[[ open\nanything",
+	"@native\nlocal function f<T>(a: {T}, ...: number): (T, ...string)\n\treturn a[1], ...\nend",
+	"local café = 1 -- naïve comment 🚀",
+	'local s = "one \\z\n   two" .. `snow \\u{2603} {x} end`',
+	"local bad = 1.2.3 + 3px + 0x @native",
+	'local emoji = "🍕" .. `{"🎲"}`',
+	")(*&^ garbage $$ ## !!",
+	"type Point = { x: number, y: number }\nexport type Points = { Point }\nlocal p = point :: Point\nlocal d: { [string]: (Point) -> number } = {}",
+}
+
 describe("token stream coverage", function()
 	it("reassembles every source exactly", function()
-		local sources = {
-			"local x: number? = nil",
-			"local u: { [string]: number } | nil = {}",
-			'local s = "say \\"hi\\"" .. "C:\\\\" .. `sum {math.max(1, 2)} done`',
-			'local m = `braces { {1, 2} } and {("}")} tricky`',
-			"local m = `unfinished {count",
-			'local s = "oops\nprint(1)',
-			"local s = [=[ never closed\ncode here",
-			"--[[ open\nanything",
-			"@native\nlocal function f<T>(a: {T}, ...: number): (T, ...string)\n\treturn a[1], ...\nend",
-			"local café = 1 -- naïve comment 🚀",
-			'local s = "one \\z\n   two" .. `snow \\u{2603} {x} end`',
-			"local bad = 1.2.3 + 3px + 0x @native",
-			'local emoji = "🍕" .. `{"🎲"}`',
-			")(*&^ garbage $$ ## !!",
-			"type Point = { x: number, y: number }\nexport type Points = { Point }\nlocal p = point :: Point\nlocal d: { [string]: (Point) -> number } = {}",
-		}
-		for _, source in sources do
+		for _, source in COVERAGE_SOURCES do
 			expect(rebuild(source)).toBe(source)
+		end
+	end)
+end)
+
+describe("scanEach", function()
+	it("produces the same stream as the scan iterator", function()
+		-- The rich text builder prefers scanEach, so a divergence between the
+		-- two walks would mishighlight in production while iterator-based
+		-- tests stay green.
+		for _, source in COVERAGE_SOURCES do
+			local scanned = {}
+			for kind, content in lexer.scan(source) do
+				table.insert(scanned, kind)
+				table.insert(scanned, content)
+			end
+
+			local walked = {}
+			lexer.scanEach(source, function(kind, content)
+				table.insert(walked, kind)
+				table.insert(walked, content)
+			end)
+
+			expect(walked).toEqual(scanned)
 		end
 	end)
 end)
@@ -445,6 +470,7 @@ describe("navigator", function()
 	it("resets its position when the source changes", function()
 		local nav = lexer.navigator()
 		nav:SetSource("local x = 1")
+		-- selene: allow(empty_loop)
 		while nav:Next() ~= nil do
 		end
 
@@ -506,6 +532,7 @@ end
 local function expectHotswapMatchesFresh(oldSource: string, newSource: string, expectReuse: boolean?)
 	local swapped = lexer.navigator()
 	swapped:SetSource(oldSource)
+	-- selene: allow(empty_loop)
 	while swapped:Next() ~= nil do
 	end
 
@@ -574,6 +601,7 @@ describe("hotswap reuse", function()
 		local source = string.rep("local x = math.floor(1.5)\n", 5)
 		local nav = lexer.navigator()
 		nav:SetSource(source)
+		-- selene: allow(empty_loop)
 		while nav:Next() ~= nil do
 		end
 		local cachedCount = nav.realIndex
@@ -623,6 +651,7 @@ describe("hotswap reuse", function()
 		local body = string.rep("local x = 1\n", 10)
 		local nav = lexer.navigator()
 		nav:SetSource(body .. "print(1)")
+		-- selene: allow(empty_loop)
 		while nav:Next() ~= nil do
 		end
 		nav:HotswapSource(body .. "print(2)")
