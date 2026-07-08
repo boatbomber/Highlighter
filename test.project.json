@@ -16,6 +16,10 @@
 				"Highlighter": {
 					"$path": "src"
 				}
+			},
+
+			"TestProject": {
+				"$path": "tests"
 			}
 		},
 

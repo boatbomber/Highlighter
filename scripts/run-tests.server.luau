@@ -4,7 +4,6 @@
 _G.NOCOLOR = true
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Packages = ReplicatedStorage:WaitForChild("Packages")
 local DevPackages = ReplicatedStorage:WaitForChild("DevPackages")
 
 local Jest = require(DevPackages:WaitForChild("Jest"))
@@ -15,7 +14,7 @@ local runCLIOptions = {
 }
 
 local projects = {
-	Packages:WaitForChild("Highlighter"),
+	ReplicatedStorage:WaitForChild("TestProject"),
 }
 
 Jest.runCLI(script, runCLIOptions, projects):await()
