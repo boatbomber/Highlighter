@@ -1,8 +1,8 @@
 --!strict
 
 --[[
-	The public face of Highlighter. Rendering math lives in richtext.lua,
-	Instance management lives in labels.lua, and colors live in theme.lua.
+	The public face of Highlighter. Rendering math lives in richtext.luau,
+	Instance management lives in labels.luau, and colors live in theme.luau.
 	This module just exposes them as one cohesive API.
 ]]
 

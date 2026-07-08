@@ -193,6 +193,17 @@ describe("buildRichTextLines", function()
 		expect(string.find(lines[1], hexFor("custom"), 1, true) ~= nil).toBe(true)
 	end)
 
+	it("colors customLang words even when whitespace merges into their token", function()
+		-- The lexer folds trailing whitespace into token contents, so the word
+		-- arrives as "myFunc\n" on line one and "myFunc " on line two.
+		local lines = Highlighter.buildRichTextLines({
+			src = "myFunc\nmyFunc (1)",
+			customLang = { myFunc = "custom" },
+		})
+		expect(string.find(lines[1], hexFor("custom"), 1, true) ~= nil).toBe(true)
+		expect(string.find(lines[2], hexFor("custom"), 1, true) ~= nil).toBe(true)
+	end)
+
 	it("uses the provided lexer", function()
 		local stubLexer = {
 			scan = function(src: string)

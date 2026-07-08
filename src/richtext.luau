@@ -11,7 +11,9 @@ local Theme = require(script.Parent.theme)
 
 local defaultLexer = require(script.Parent.lexer) :: types.Lexer
 
--- Control characters other than newline and tab, which the highlighter keeps.
+-- Control characters that normalize strips. Newlines and tabs are excluded
+-- because newlines delimit lines and tabs convert to spaces instead. Carriage
+-- returns are included, which is what turns CRLF line endings into plain LF.
 local CONTROL_CHARACTERS = "[\0\1\2\3\4\5\6\7\8\11\12\13\14\15\16\17\18\19\20\21\22\23\24\25\26\27\28\29\30\31]+"
 
 local RichText = {}
@@ -85,9 +87,15 @@ function RichText.buildLines(options: BuildLinesOptions): number
 
 	for token, content in options.lexer.scan(options.src) do
 		-- The token is cast because iterating the lexer widens its TokenName to a plain string.
-		local color = if customLang and customLang[content]
-			then Theme.getColor("custom")
-			else Theme.getColor(token :: types.TokenName) or idenColor
+		local color = Theme.getColor(token :: types.TokenName) or idenColor
+		if customLang ~= nil then
+			-- The lexer merges surrounding whitespace into token contents while
+			-- customLang lists bare words, so the lookup trims the edges off.
+			local word = string.match(content, "^%s*(.-)%s*$")
+			if word ~= nil and customLang[word] ~= nil then
+				color = Theme.getColor("custom")
+			end
+		end
 
 		local tokenLines = string.split(RichText.sanitize(content), "\n")
 

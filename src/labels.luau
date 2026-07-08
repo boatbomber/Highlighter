@@ -114,12 +114,14 @@ local function populateLabels(props: types.HighlightProps)
 	local customLang = props.customLang
 	local forceUpdate = props.forceUpdate
 
-	-- Unchanged sources skip the whole update unless the caller forces one.
+	-- Untracked textObjects have nothing to populate, and unchanged sources
+	-- skip the whole update unless the caller forces one.
 	local data = textObjectData[textObject]
-	if (data == nil) or (data.Text == src) then
-		if forceUpdate ~= true then
-			return
-		end
+	if data == nil then
+		return
+	end
+	if data.Text == src and forceUpdate ~= true then
+		return
 	end
 
 	-- Luau cannot assign properties through a union of instance types, so writes

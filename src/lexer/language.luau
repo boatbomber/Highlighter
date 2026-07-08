@@ -1,5 +1,10 @@
 --!strict
 
+--[[
+	The word tables the scanner classifies identifiers with. Keywords, global
+	builtins, and library members all live here.
+]]
+
 -- The indexer annotations let consumers look words up by arbitrary strings,
 -- and let the Enum fill below add members the literal does not list.
 type LanguageTable = {

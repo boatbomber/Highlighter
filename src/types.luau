@@ -1,5 +1,10 @@
 --!strict
 
+--[[
+	Shared type definitions used across the highlighter's modules. This module
+	only exports types, so it returns nil.
+]]
+
 export type TextObject = TextLabel | TextBox
 
 export type TokenName =

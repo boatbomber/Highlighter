@@ -393,9 +393,6 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 				index += 1
 			end
 		end
-		if index > size + 1 then
-			index = size + 1
-		end
 		local text = string.sub(source, start, index - 1)
 		emit("string", text)
 		if string.find(text, "\n", 1, true) ~= nil then
@@ -504,9 +501,6 @@ local function scanSource(source: string, yield: (string, string) -> (), startIn
 			else
 				index += 1
 			end
-		end
-		if index > size + 1 then
-			index = size + 1
 		end
 		emit("string", string.sub(source, start, index - 1))
 		return nil

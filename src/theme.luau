@@ -1,5 +1,11 @@
 --!strict
 
+--[[
+	Token colors for the highlighter. This module owns the active color map,
+	merges caller overrides into it, and can mirror the Studio script editor
+	theme from inside a plugin.
+]]
+
 local types = require(script.Parent.types)
 
 local Theme = {
