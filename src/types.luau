@@ -1,3 +1,5 @@
+--!strict
+
 export type TextObject = TextLabel | TextBox
 
 export type TokenName =
@@ -31,9 +33,20 @@ export type BuildRichTextLinesProps = {
 }
 
 export type Lexer = {
-	scan: (src: string, startIndex: number?) -> () -> (string, string),
+	scan: (src: string, startIndex: number?) -> () -> (TokenName?, string),
 	navigator: () -> any,
-	finished: boolean?,
+}
+
+export type LabelingInfo = {
+	data: ObjectData,
+	numLines: number,
+	textBounds: Vector2,
+	textHeight: number,
+	innerAbsoluteSize: Vector2,
+	textColor: Color3,
+	textFont: Font,
+	textSize: number,
+	labelSize: UDim2,
 }
 
 export type ObjectData = {

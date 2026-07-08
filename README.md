@@ -1,23 +1,23 @@
 # Highlighter
 
-RichText highlighting Lua code with a pure Lua lexer
+Highlighter renders syntax highlighted Luau code in Roblox using RichText and a pure Luau lexer.
 
 ## Installation
 
-Wally:
+### Wally
 
 ```toml
 [dependencies]
 Highlighter = "boatbomber/highlighter@0.10.0"
 ```
 
-Roblox Model:
+### Roblox model
 
-Download from [Releases](https://github.com/boatbomber/Highlighter/releases)
+You can download a model file from the [Releases](https://github.com/boatbomber/Highlighter/releases) page.
 
 ## API
 
-**Functions:**
+### Functions
 
 ```Lua
 function Highlighter.highlight(props: types.HighlightProps): () -> ()
@@ -59,7 +59,7 @@ function Highlighter.matchStudioSettings(): ()
 Matches the token colors to the Studio theme settings and refreshes all highlighted textObjects.
 Does nothing when not run in a Studio plugin.
 
-**Types:**
+### Types
 
 ```Lua
 type TextObject = TextLabel | TextBox
@@ -89,15 +89,14 @@ type HighlightProps = {
 }
 
 type BuildRichTextLinesProps = {
- src: string,
- lexer: Lexer?,
- customLang: { [string]: string }?,
+    src: string,
+    lexer: Lexer?,
+    customLang: { [string]: string }?,
 }
 
 type Lexer = {
-    scan: (src: string, startIndex: number?) -> () -> (string, string),
+    scan: (src: string, startIndex: number?) -> () -> (TokenName?, string),
     navigator: () -> any,
-    finished: boolean?,
 }
 ```
 
@@ -106,11 +105,15 @@ type Lexer = {
 ```Lua
 local Highlighter = require(script.Highlighter)
 
--- When using in a Studio Plugin, this will automatically match the Studio theme
+-- Inside a Studio plugin, this automatically matches the Studio theme.
 Highlighter.matchStudioSettings()
 
--- Add syntax highlighting to myTextLabel
+-- This adds syntax highlighting to myTextLabel.
 Highlighter.highlight({
-    textObject: myTextLabel,
+    textObject = myTextLabel,
 })
 ```
+
+## Reference
+
+The native [Luau lexer](https://github.com/luau-lang/luau/blob/master/Ast/src/Lexer.cpp) and [Luau parser](https://github.com/luau-lang/luau/blob/master/Ast/src/Parser.cpp) are useful references for how the language tokenizes.
