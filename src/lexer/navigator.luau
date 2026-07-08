@@ -100,7 +100,11 @@ function Navigator.new(scan: ScanFunction)
 
 				for _ = 1, iterationsAway do
 					success, token, content = coroutine.resume(scanThread)
-					if not (success or token) then
+					if not (success and token) then
+						-- The scan is exhausted, or resume failed and put its
+						-- error message in the token slot, so the peek misses.
+						token = nil
+						content = nil
 						break
 					end
 				end

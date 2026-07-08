@@ -10,9 +10,11 @@ local expect = JestGlobals.expect
 
 local lexer = require(Packages:WaitForChild("Highlighter"):WaitForChild("lexer"))
 
--- Finds the "@@" caret marker in a snippet, removes it, scans the remaining
--- source, and returns the kind and whitespace-trimmed text of the token that
--- covers the marked character.
+--[[
+	Finds the "@@" caret marker in a snippet, removes it, scans the remaining
+	source, and returns the kind and whitespace-trimmed text of the token that
+	covers the marked character.
+]]
 local function tokenAt(snippet: string): (string?, string?)
 	local markerStart = string.find(snippet, "@@", 1, true)
 	assert(markerStart, "snippet has no @@ marker")
@@ -28,14 +30,19 @@ local function tokenAt(snippet: string): (string?, string?)
 	return nil, nil
 end
 
+--[[
+	Grabs just the kind of the token that covers the "@@" marker.
+]]
 local function kindAt(snippet: string): string?
 	local kind = tokenAt(snippet)
 	return kind
 end
 
--- Rebuilds a source from its scanned token contents. Consumers position text
--- by walking token lengths, so every character must be covered exactly once
--- and in order.
+--[[
+	Rebuilds a source from its scanned token contents. Consumers position text
+	by walking token lengths, so every character must be covered exactly once
+	and in order.
+]]
 local function rebuild(source: string): string
 	local parts = {}
 	for _, content in lexer.scan(source) do
@@ -55,6 +62,12 @@ describe("keywords, identifiers, and builtins", function()
 
 	it("classifies identifiers", function()
 		expect(kindAt("local @@x = 1")).toBe("iden")
+	end)
+
+	it("treats keyword prefixes as plain identifiers", function()
+		expect(kindAt("@@localizer = 1")).toBe("iden")
+		expect(kindAt("local @@truthy = 1")).toBe("iden")
+		expect(kindAt("local @@ending = 1")).toBe("iden")
 	end)
 
 	it("classifies builtins", function()
@@ -307,6 +320,33 @@ describe("scan from a start index", function()
 		end
 		expect(table.concat(parts)).toBe(string.sub(source, startIndex))
 	end)
+
+	it("yields nothing when the start index is past the end", function()
+		local kind, content = lexer.scan("abc", 10)()
+		expect(kind).toBe(nil)
+		expect(content).toBe("")
+	end)
+end)
+
+describe("iterator contract", function()
+	it("returns nil and an empty string once exhausted", function()
+		local iterator = lexer.scan("local x = 1")
+		local kind, content = iterator()
+		while kind ~= nil do
+			kind, content = iterator()
+		end
+		expect(content).toBe("")
+
+		local kindAgain, contentAgain = iterator()
+		expect(kindAgain).toBe(nil)
+		expect(contentAgain).toBe("")
+	end)
+
+	it("returns nil and an empty string for an empty source", function()
+		local kind, content = lexer.scan("")()
+		expect(kind).toBe(nil)
+		expect(content).toBe("")
+	end)
 end)
 
 describe("navigator", function()
@@ -324,6 +364,74 @@ describe("navigator", function()
 		kind, content = nav:Next()
 		expect(kind).toBe("iden")
 		expect(content).toBe("x ")
+	end)
+
+	it("peeks without advancing", function()
+		local nav = lexer.navigator()
+		nav:SetSource("local x = 1")
+
+		local firstPeekKind, firstPeekContent = nav:Peek(1)
+		local secondPeekKind, secondPeekContent = nav:Peek(1)
+		expect(secondPeekKind).toBe(firstPeekKind)
+		expect(secondPeekContent).toBe(firstPeekContent)
+
+		local kind, content = nav:Next()
+		expect(kind).toBe(firstPeekKind)
+		expect(content).toBe(firstPeekContent)
+	end)
+
+	it("peeks multiple tokens ahead", function()
+		local nav = lexer.navigator()
+		nav:SetSource("local x = 1")
+
+		local kind, content = nav:Peek(3)
+		expect(kind).toBe("operator")
+		expect(content).toBe("= ")
+	end)
+
+	it("peeks backward into already read tokens", function()
+		local nav = lexer.navigator()
+		nav:SetSource("local x = 1")
+		nav:Next()
+		nav:Next()
+
+		local kind, content = nav:Peek(-1)
+		expect(kind).toBe("keyword")
+		expect(content).toBe("local ")
+	end)
+
+	it("returns nil when reading or peeking past the end", function()
+		local nav = lexer.navigator()
+		nav:SetSource("x")
+
+		expect(nav:Peek(5)).toBe(nil)
+
+		local kind = nav:Next()
+		expect(kind).toBe("iden")
+		expect(nav:Next()).toBe(nil)
+		expect(nav:Next()).toBe(nil)
+	end)
+
+	it("resets its position when the source changes", function()
+		local nav = lexer.navigator()
+		nav:SetSource("local x = 1")
+		while nav:Next() ~= nil do
+		end
+
+		nav:SetSource("print(1)")
+		local kind, content = nav:Next()
+		expect(kind).toBe("builtin")
+		expect(content).toBe("print")
+	end)
+
+	it("destroys without error", function()
+		local nav = lexer.navigator()
+		nav:SetSource("local x = 1")
+		nav:Next()
+
+		expect(function()
+			nav:Destroy()
+		end).never.toThrow()
 	end)
 
 	it("hotswaps to a new source", function()
