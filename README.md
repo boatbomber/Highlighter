@@ -59,6 +59,15 @@ function Highlighter.matchStudioSettings(): ()
 Matches the token colors to the Studio theme settings and refreshes all highlighted textObjects.
 Does nothing when not run in a Studio plugin.
 
+### Properties
+
+```Lua
+Highlighter.defaultLexer: Lexer
+```
+
+The built-in Luau lexer, used whenever props don't provide one.
+Its scanning flow is documented in [docs/lexer.md](docs/lexer.md).
+
 ### Types
 
 ```Lua
@@ -116,4 +125,5 @@ Highlighter.highlight({
 
 ## Reference
 
+The bundled lexer's scanning flow, state machine, and deliberate deviations from upstream are documented in [docs/lexer.md](docs/lexer.md).
 The native [Luau lexer](https://github.com/luau-lang/luau/blob/master/Ast/src/Lexer.cpp) and [Luau parser](https://github.com/luau-lang/luau/blob/master/Ast/src/Parser.cpp) are useful references for how the language tokenizes.
