@@ -35,28 +35,23 @@ function RichText.normalize(src: string): string
 	return (string.gsub(string.gsub(src, CONTROL_CHARACTERS, ""), "\t", "    "))
 end
 
+-- Replacements for the characters rich text parses as markup. gsub applies
+-- them in a single pass over the text, so replacement text is never
+-- rescanned and the ampersand inside an inserted escape stays as it is.
+local RICH_TEXT_ESCAPES = {
+	["&"] = "&amp;",
+	["<"] = "&lt;",
+	[">"] = "&gt;",
+	['"'] = "&quot;",
+	["'"] = "&apos;",
+}
+local RICH_TEXT_UNSAFE = "[&<>\"']"
+
 --[[
 	Escapes characters that rich text would otherwise parse as markup.
 ]]
 function RichText.sanitize(text: string): string
-	return (
-		string.gsub(
-			string.gsub(
-				string.gsub(string.gsub(string.gsub(text, "&", "&amp;"), "<", "&lt;"), ">", "&gt;"),
-				'"',
-				"&quot;"
-			),
-			"'",
-			"&apos;"
-		)
-	)
-end
-
---[[
-	Wraps the given text in a rich text font tag for the given color.
-]]
-function RichText.wrapColor(color: Color3, text: string): string
-	return '<font color="#' .. color:ToHex() .. '">' .. text .. "</font>"
+	return (string.gsub(text, RICH_TEXT_UNSAFE, RICH_TEXT_ESCAPES))
 end
 
 --[[
@@ -72,6 +67,8 @@ function RichText.buildLines(options: BuildLinesOptions): number
 	local alwaysTagText = options.alwaysTagText
 	local shouldBuildLine = options.shouldBuildLine
 	local onLine = options.onLine
+	-- Rebound as a local so the per token loop skips the module field read.
+	local sanitize = RichText.sanitize
 
 	local function lineWillBuild(lineNumber: number): boolean
 		if shouldBuildLine == nil then
@@ -80,46 +77,108 @@ function RichText.buildLines(options: BuildLinesOptions): number
 		return shouldBuildLine(lineNumber)
 	end
 
-	local idenColor = Theme.getColor("iden")
+	local idenTag = Theme.getOpenTag("iden")
 
-	local richTextBuffer, bufferIndex, lineNumber = table.create(5), 0, 1
+	-- The theme prebuilds the open font tags, so this call level cache only
+	-- resolves each kind once against alwaysTagText. An empty string means
+	-- pieces of that kind go into the line untagged.
+	local openTags: { [string]: string } = {}
+
+	--[[
+		Resolves and caches the open font tag for a token kind, or an empty
+		string when that kind's text should stay untagged because it renders
+		in the default color the consuming label already has.
+	]]
+	local function resolveOpenTag(kind: string): string
+		-- The kind is cast because it arrives widened to a plain string.
+		local openTag = Theme.getOpenTag(kind :: types.TokenName)
+		if not alwaysTagText and openTag == idenTag then
+			openTag = ""
+		end
+		openTags[kind] = openTag
+		return openTag
+	end
+
+	local richTextBuffer, bufferIndex, lineNumber = table.create(16), 0, 1
 	local buildingLine = lineWillBuild(1)
 
-	for token, content in options.lexer.scan(options.src) do
-		-- The token is cast because iterating the lexer widens its TokenName to a plain string.
-		local color = Theme.getColor(token :: types.TokenName) or idenColor
+	--[[
+		Appends one line piece of a token onto the current line's buffer.
+		Tagged pieces go in as three slots so the per line table.concat does
+		the joining, which avoids allocating a wrapped string per piece.
+		Empty pieces skip the tag so blank lines stay truly empty. Sources
+		reach the builder normalized, so a nonempty piece always has
+		something to render.
+	]]
+	local function appendPiece(piece: string, openTag: string)
+		if openTag ~= "" and piece ~= "" then
+			richTextBuffer[bufferIndex + 1] = openTag
+			richTextBuffer[bufferIndex + 2] = piece
+			richTextBuffer[bufferIndex + 3] = "</font>"
+			bufferIndex += 3
+		else
+			bufferIndex += 1
+			richTextBuffer[bufferIndex] = piece
+		end
+	end
+
+	--[[
+		Turns one token into line pieces on the current buffer, finishing and
+		emitting lines as the token's newlines go by.
+	]]
+	local function handleToken(token: string, content: string)
+		local openTag = openTags[token]
+		if openTag == nil then
+			openTag = resolveOpenTag(token)
+		end
 		if customLang ~= nil then
 			-- The lexer merges surrounding whitespace into token contents while
 			-- customLang lists bare words, so the lookup trims the edges off.
 			local word = string.match(content, "^%s*(.-)%s*$")
 			if word ~= nil and customLang[word] ~= nil then
-				color = Theme.getColor("custom")
+				openTag = openTags.custom
+				if openTag == nil then
+					openTag = resolveOpenTag("custom")
+				end
 			end
 		end
 
-		local tokenLines = string.split(RichText.sanitize(content), "\n")
+		local sanitized = sanitize(content)
 
-		for l, tokenLine in tokenLines do
-			-- Every piece after the first sits on a new line, so the current
-			-- line is finished and emitted before moving on.
-			if l > 1 then
-				onLine(lineNumber, if buildingLine then table.concat(richTextBuffer) else nil)
-				lineNumber += 1
-				bufferIndex = 0
-				table.clear(richTextBuffer)
-				buildingLine = lineWillBuild(lineNumber)
-			end
-
+		if string.find(sanitized, "\n", 1, true) == nil then
+			-- Most tokens sit on a single line, so they skip the split and
+			-- the table it allocates.
 			if buildingLine then
-				bufferIndex += 1
-				-- Font tags only wrap visible characters, and only when the
-				-- caller wants tags for the default color too.
-				if (alwaysTagText or color ~= idenColor) and string.find(tokenLine, "[%S%C]") then
-					richTextBuffer[bufferIndex] = RichText.wrapColor(color, tokenLine)
-				else
-					richTextBuffer[bufferIndex] = tokenLine
+				appendPiece(sanitized, openTag)
+			end
+		else
+			local tokenLines = string.split(sanitized, "\n")
+			for l, tokenLine in tokenLines do
+				-- Every piece after the first sits on a new line, so the
+				-- current line is finished and emitted before moving on.
+				if l > 1 then
+					onLine(lineNumber, if buildingLine then table.concat(richTextBuffer) else nil)
+					lineNumber += 1
+					bufferIndex = 0
+					table.clear(richTextBuffer)
+					buildingLine = lineWillBuild(lineNumber)
+				end
+
+				if buildingLine then
+					appendPiece(tokenLine, openTag)
 				end
 			end
+		end
+	end
+
+	-- The direct callback walk skips the iterator's coroutine round trip per
+	-- token, so it wins whenever the lexer offers it.
+	local scanEach = options.lexer.scanEach
+	if scanEach ~= nil then
+		scanEach(options.src, handleToken)
+	else
+		for token, content in options.lexer.scan(options.src) do
+			handleToken(token, content)
 		end
 	end
 

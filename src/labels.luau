@@ -128,7 +128,7 @@ local function populateLabels(props: types.HighlightProps)
 	-- go through this narrowed alias. TextBox shares every property written here.
 	local writableTextObject = textObject :: TextLabel
 
-	-- The textObject text always matches the sanitized source.
+	-- The textObject text always matches the normalized source.
 	writableTextObject.Text = src
 
 	local lineLabels = data.Labels

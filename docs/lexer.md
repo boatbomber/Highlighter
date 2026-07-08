@@ -10,6 +10,8 @@ Two invariants matter to consumers. Token contents concatenate back to the exact
 
 `scan` also accepts an optional `startIndex` that begins scanning at that byte with fresh context. Tokens whose meaning depends on what came earlier, like type positions or interpolation holes, may classify differently in a partial scan than they would in a full one.
 
+`Lexer.scanEach(source, onToken)` walks the same scanner but delivers every token through a direct callback instead of an iterator, which skips a coroutine round trip per token. The rich text builder reads whole sources, so it uses this form whenever a lexer provides it.
+
 ## How a scan runs
 
 `Lexer.scan` wraps `scanSource` in a coroutine and hands `coroutine.yield` in as the emit callback, so tokens stream out lazily as the consumer pulls them. All scanner state lives in locals inside `scanSource`, which keeps concurrent scans of different sources fully independent.

@@ -766,6 +766,17 @@ function Lexer.scan(source: string, startIndex: number?): () -> (string?, string
 end
 
 --[[
+	Calls onToken with every token of the source in order. This walks the
+	same scanner as Lexer.scan without the iterator's coroutine, which makes
+	it the cheapest way to read a whole source when tokens can be handled as
+	they arrive. The extra optional parameters carry the restart snapshots
+	the scanner attaches to some tokens, which callers are free to ignore.
+]]
+function Lexer.scanEach(source: string, onToken: (string, string, number?, number?) -> ())
+	scanSource(source, onToken, nil, nil)
+end
+
+--[[
 	Creates a token iterator like Lexer.scan whose returns also carry restart
 	snapshots, and which accepts a seed for resuming a scan partway through a
 	source. The navigator reads through this richer form so HotswapSource can

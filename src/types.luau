@@ -39,6 +39,7 @@ export type BuildRichTextLinesProps = {
 
 export type Lexer = {
 	scan: (src: string, startIndex: number?) -> () -> (TokenName?, string),
+	scanEach: ((src: string, onToken: (TokenName, string) -> ()) -> ())?,
 	navigator: () -> any,
 }
 

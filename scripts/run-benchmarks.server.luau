@@ -152,6 +152,17 @@ print(
 	)
 )
 
+local scanEachBest = summarize(
+	"Lexer.scanEach full walk",
+	measure(noSetup, function()
+		local count = 0
+		Lexer.scanEach(source, function()
+			count += 1
+		end)
+	end)
+)
+print(string.format("  %.1fx faster than draining the iterator", scanBest / scanEachBest))
+
 summarize(
 	"buildRichTextLines",
 	measure(noSetup, function()

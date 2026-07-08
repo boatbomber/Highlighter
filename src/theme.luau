@@ -30,8 +30,25 @@ local Theme = {
 -- matchStudioSettings replace the connection instead of stacking new ones.
 local themeChangedConnection: RBXScriptConnection? = nil
 
+-- Open font tags derived from the active colors. They rebuild whenever a
+-- color changes, so the rich text builder reads finished strings instead of
+-- paying a ToHex call and a concatenation per lookup.
+local tokenOpenTags: { [string]: string } = {}
+
 --[[
-	Merges the given token colors into the active color map.
+	Builds the open font tag for the given color.
+]]
+local function openTagFor(color: Color3): string
+	return `<font color="#{color:ToHex()}">`
+end
+
+for tokenName, color in Theme.tokenColors do
+	tokenOpenTags[tokenName] = openTagFor(color)
+end
+
+--[[
+	Merges the given token colors into the active color map and rebuilds the
+	derived open tags for the names that changed.
 ]]
 function Theme.setColors(tokenColors: types.TokenColors)
 	assert(type(tokenColors) == "table", "Theme.setColors expects a table")
@@ -40,6 +57,7 @@ function Theme.setColors(tokenColors: types.TokenColors)
 		-- Iteration never produces nil values, so this check only narrows the type.
 		if color ~= nil then
 			Theme.tokenColors[tokenName] = color
+			tokenOpenTags[tokenName] = openTagFor(color)
 		end
 	end
 end
@@ -49,6 +67,19 @@ end
 ]]
 function Theme.getColor(tokenName: types.TokenName): Color3
 	return Theme.tokenColors[tokenName]
+end
+
+--[[
+	Looks up the prebuilt open font tag for the given token name. Unknown
+	names fall back to the identifier tag, matching how their color reads
+	fall back to the identifier color.
+]]
+function Theme.getOpenTag(tokenName: types.TokenName): string
+	local openTag = tokenOpenTags[tokenName]
+	if openTag == nil then
+		return tokenOpenTags.iden
+	end
+	return openTag
 end
 
 --[[
