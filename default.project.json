@@ -1,5 +1,6 @@
 {
 	"name": "Highlighter",
+	"globIgnorePaths": ["**/__tests__", "**/jest.config.luau"],
 	"tree": {
 		"$path": "src"
 	}

@@ -1,0 +1,30 @@
+{
+	"name": "HighlighterTest",
+	"tree": {
+		"$className": "DataModel",
+
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+
+			"DevPackages": {
+				"$path": "DevPackages"
+			},
+
+			"Packages": {
+				"$className": "Folder",
+
+				"Highlighter": {
+					"$path": "src"
+				}
+			}
+		},
+
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+
+			"run-tests": {
+				"$path": "scripts/run-tests.server.luau"
+			}
+		}
+	}
+}

@@ -7,4 +7,8 @@ authors = ["boatbomber (https://boatbomber.com)"]
 registry = "https://github.com/upliftgames/wally-index"
 realm = "shared"
 include = ["src", "src/**", "wally.toml", "wally.lock", "default.project.json"]
-exclude = ["**"]
+exclude = ["**", "src/__tests__", "src/__tests__/**", "src/jest.config.luau"]
+
+[dev-dependencies]
+Jest = "jsdotlua/jest@3.10.0"
+JestGlobals = "jsdotlua/jest-globals@3.10.0"
