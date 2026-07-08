@@ -1,3 +1,5 @@
+--!strict
+
 local language = {
 	keyword = {
 		["and"] = "keyword",
@@ -545,12 +547,14 @@ local language = {
 	},
 }
 
--- Filling up language.libraries.Enum table
+-- The Enum library members come from the engine,
+-- so this fill is pcalled to silently skip in Lune/Lute/etc.
 local enumLibraryTable = language.libraries.Enum
 
-for _, enum in ipairs(Enum:GetEnums()) do
-	--TODO: Remove tostring from here once there is a better way to get the name of an Enum
-	enumLibraryTable[tostring(enum)] = "Enum"
-end
+pcall(function()
+	for _, enum in ipairs(Enum:GetEnums()) do
+		enumLibraryTable[tostring(enum)] = "Enum"
+	end
+end)
 
 return language
