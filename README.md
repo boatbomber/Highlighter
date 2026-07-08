@@ -69,6 +69,7 @@ type TokenName =
     | "iden"
     | "keyword"
     | "builtin"
+    | "type"
     | "string"
     | "number"
     | "comment"
@@ -76,15 +77,7 @@ type TokenName =
     | "custom"
 
 type TokenColors = {
-    ["background"]: Color3?,
-    ["iden"]: Color3?,
-    ["keyword"]: Color3?,
-    ["builtin"]: Color3?,
-    ["string"]: Color3?,
-    ["number"]: Color3?,
-    ["comment"]: Color3?,
-    ["operator"]: Color3?,
-    ["custom"]: Color3?,
+    [TokenName]: Color3?,
 }
 
 type HighlightProps = {
