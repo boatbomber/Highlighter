@@ -12,5 +12,6 @@
 /*.rbxlx.lock
 /*.rbxl.lock
 
-# VS Code files
+# Tooling files
 .vscode/*
+.claude/*
