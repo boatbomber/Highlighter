@@ -196,6 +196,22 @@ describe("automatic updates", function()
 		expect(updated).toBe(true)
 	end)
 
+	it("recolors unchanged lines when an earlier edit changes their context", function()
+		local textObject = makeTextObject("local a = 1\nprint(2)")
+		Highlighter.highlight({ textObject = textObject })
+
+		-- Opening a block comment on line 1 leaves line 2's text identical
+		-- while changing every token on it.
+		textObject.Text = "--[[ a = 1\nprint(2)"
+
+		local commentHex = Highlighter.getTokenColor("comment"):ToHex()
+		local updated = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[2]
+			return lineLabel ~= nil and string.find(lineLabel.Text, commentHex, 1, true) ~= nil
+		end)
+		expect(updated).toBe(true)
+	end)
+
 	it("creates labels for added lines", function()
 		local textObject = makeTextObject("local a = 1")
 		Highlighter.highlight({ textObject = textObject })
@@ -293,6 +309,70 @@ describe("cleanup", function()
 		end)
 		expect(cleaned).toBe(true)
 	end)
+
+	it("releases tracking when an ancestor is destroyed", function()
+		local textObject = makeTextObject("local x = 1")
+		Highlighter.highlight({ textObject = textObject })
+
+		local screenGui = textObject.Parent :: Instance
+		screenGui:Destroy()
+		task.wait()
+
+		-- Property writes still work on destroyed instances, so a leaked
+		-- entry would let refresh overwrite this text with the stored
+		-- source, while a released one leaves it alone.
+		textObject.Text = "tampered"
+		Highlighter.refresh()
+		task.wait()
+		expect(textObject.Text).toBe("tampered")
+	end)
+end)
+
+describe("redundant work", function()
+	local RichTextModule = require(Packages:WaitForChild("Highlighter"):WaitForChild("richtext"))
+
+	--[[
+		Wraps RichText.normalize with a counter for the duration of a callback
+		and returns how many times it ran. The labels module reads normalize
+		through the module table on every call, which is what makes the spy
+		visible to it.
+	]]
+	local function countNormalizeCalls(callback: () -> ()): number
+		local realNormalize = RichTextModule.normalize
+		local calls = 0
+		RichTextModule.normalize = function(src: string): string
+			calls += 1
+			return realNormalize(src)
+		end
+		local ok, err = pcall(callback)
+		RichTextModule.normalize = realNormalize
+		if not ok then
+			error(err)
+		end
+		return calls
+	end
+
+	it("does not renormalize the source when only geometry changes", function()
+		local textObject = makeTextObject("local x = 1\nprint(2)")
+		Highlighter.highlight({ textObject = textObject })
+
+		local calls = countNormalizeCalls(function()
+			textObject.Size = UDim2.fromOffset(500, 400)
+			task.wait()
+			task.wait()
+		end)
+		expect(calls).toBe(0)
+	end)
+
+	it("normalizes once per repeated highlight call", function()
+		local textObject = makeTextObject("local x = 1")
+		Highlighter.highlight({ textObject = textObject })
+
+		local calls = countNormalizeCalls(function()
+			Highlighter.highlight({ textObject = textObject })
+		end)
+		expect(calls).toBe(1)
+	end)
 end)
 
 describe("refresh", function()
@@ -310,6 +390,22 @@ describe("refresh", function()
 			return string.find(lineLabel.Text, keywordHex, 1, true) ~= nil
 		end)
 		expect(rebuilt).toBe(true)
+	end)
+
+	it("applies new background and base text colors to the textObject", function()
+		local savedBackground = Highlighter.getTokenColor("background")
+		local savedIden = Highlighter.getTokenColor("iden")
+		local textObject = makeTextObject("local x = 1")
+		Highlighter.highlight({ textObject = textObject })
+
+		local newBackground = Color3.fromRGB(1, 2, 3)
+		local newIden = Color3.fromRGB(4, 5, 6)
+		Highlighter.setTokenColors({ background = newBackground, iden = newIden })
+
+		expect(textObject.BackgroundColor3:ToHex()).toBe(newBackground:ToHex())
+		expect(textObject.TextColor3:ToHex()).toBe(newIden:ToHex())
+
+		Highlighter.setTokenColors({ background = savedBackground, iden = savedIden })
 	end)
 
 	it("applies new token colors to existing labels", function()

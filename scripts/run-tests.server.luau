@@ -1,5 +1,10 @@
--- run-in-roblox output does not render ANSI colors, so tell Jest's reporter
--- to print plain text.
+--[[
+	Boots Jest inside the built test place. run-in-roblox reports the place
+	script's outcome, so failing tests surface by erroring at the end.
+]]
+
+-- run-in-roblox output does not render ANSI colors, so Jest's reporter
+-- prints plain text.
 -- selene: allow(global_usage)
 _G.NOCOLOR = true
 

@@ -128,6 +128,9 @@ local function scannedNavigator(source: string): () -> any
 	end
 end
 
+--[[
+	Stands in for a benchmark that needs nothing built before each run.
+]]
 local function noSetup(): any
 	return nil
 end

@@ -3,6 +3,13 @@
 	"tree": {
 		"$className": "DataModel",
 
+		"Workspace": {
+			"$className": "Workspace",
+			"$properties": {
+				"SignalBehavior": "Deferred"
+			}
+		},
+
 		"ReplicatedStorage": {
 			"$className": "ReplicatedStorage",
 

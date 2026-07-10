@@ -24,8 +24,7 @@ export type BuildLinesOptions = {
 	lexer: types.Lexer,
 	customLang: { [string]: string }?,
 	alwaysTagText: boolean,
-	shouldBuildLine: ((lineNumber: number) -> boolean)?,
-	onLine: (lineNumber: number, richText: string?) -> (),
+	onLine: (lineNumber: number, richText: string) -> (),
 }
 
 --[[
@@ -48,6 +47,16 @@ local RICH_TEXT_ESCAPES = {
 }
 local RICH_TEXT_UNSAFE = "[&<>\"']"
 
+-- The token kinds whose contents can equal a bare customLang word. Strings
+-- carry their quotes and comments their dashes, so only these four can ever
+-- match, and gating on them keeps the trim allocation off every other token.
+local WORD_KINDS: { [string]: boolean } = {
+	iden = true,
+	keyword = true,
+	builtin = true,
+	type = true,
+}
+
 --[[
 	Escapes characters that rich text would otherwise parse as markup.
 ]]
@@ -57,26 +66,19 @@ end
 
 --[[
 	Scans the source once and emits one rich text string per line through the
-	onLine callback. Lines that shouldBuildLine declines receive nil instead of
-	text, which lets callers keep existing content for unchanged lines while
-	still hearing about every line number. When alwaysTagText is false, text in
-	the default identifier color skips its font tag since the consuming label
-	already renders that color. Returns the last line number emitted.
+	onLine callback. Every line builds, since a line's tokens can change from
+	edits on earlier lines alone, so callers that want to skip work compare
+	the built text against what they already have. When alwaysTagText is
+	false, text in the default identifier color skips its font tag since the
+	consuming label already renders that color. Returns the last line number
+	emitted.
 ]]
 function RichText.buildLines(options: BuildLinesOptions): number
 	local customLang = options.customLang
 	local alwaysTagText = options.alwaysTagText
-	local shouldBuildLine = options.shouldBuildLine
 	local onLine = options.onLine
 	-- Rebound as a local so the per token loop skips the module field read.
 	local sanitize = RichText.sanitize
-
-	local function lineWillBuild(lineNumber: number): boolean
-		if shouldBuildLine == nil then
-			return true
-		end
-		return shouldBuildLine(lineNumber)
-	end
 
 	local idenTag = Theme.getOpenTag("iden")
 
@@ -101,7 +103,6 @@ function RichText.buildLines(options: BuildLinesOptions): number
 	end
 
 	local richTextBuffer, bufferIndex, lineNumber = table.create(16), 0, 1
-	local buildingLine = lineWillBuild(1)
 
 	--[[
 		Appends one line piece of a token onto the current line's buffer.
@@ -132,7 +133,7 @@ function RichText.buildLines(options: BuildLinesOptions): number
 		if openTag == nil then
 			openTag = resolveOpenTag(token)
 		end
-		if customLang ~= nil then
+		if customLang ~= nil and WORD_KINDS[token] ~= nil then
 			-- The lexer merges surrounding whitespace into token contents while
 			-- customLang lists bare words, so the lookup trims the edges off.
 			local word = string.match(content, "^%s*(.-)%s*$")
@@ -149,25 +150,20 @@ function RichText.buildLines(options: BuildLinesOptions): number
 		if string.find(sanitized, "\n", 1, true) == nil then
 			-- Most tokens sit on a single line, so they skip the split and
 			-- the table it allocates.
-			if buildingLine then
-				appendPiece(sanitized, openTag)
-			end
+			appendPiece(sanitized, openTag)
 		else
 			local tokenLines = string.split(sanitized, "\n")
 			for l, tokenLine in tokenLines do
 				-- Every piece after the first sits on a new line, so the
 				-- current line is finished and emitted before moving on.
 				if l > 1 then
-					onLine(lineNumber, if buildingLine then table.concat(richTextBuffer) else nil)
+					onLine(lineNumber, table.concat(richTextBuffer))
 					lineNumber += 1
 					bufferIndex = 0
 					table.clear(richTextBuffer)
-					buildingLine = lineWillBuild(lineNumber)
 				end
 
-				if buildingLine then
-					appendPiece(tokenLine, openTag)
-				end
+				appendPiece(tokenLine, openTag)
 			end
 		end
 	end
@@ -183,7 +179,7 @@ function RichText.buildLines(options: BuildLinesOptions): number
 		end
 	end
 
-	onLine(lineNumber, if buildingLine then table.concat(richTextBuffer) else nil)
+	onLine(lineNumber, table.concat(richTextBuffer))
 
 	return lineNumber
 end
@@ -211,12 +207,8 @@ function RichText.buildRichTextLines(props: types.BuildRichTextLinesProps): { st
 		lexer = props.lexer or defaultLexer,
 		customLang = props.customLang,
 		alwaysTagText = true,
-		onLine = function(lineNumber: number, richText: string?)
-			-- Every line builds because there is no shouldBuildLine, so the
-			-- check only narrows the type.
-			if richText ~= nil then
-				richTextLines[lineNumber] = richText
-			end
+		onLine = function(lineNumber: number, richText: string)
+			richTextLines[lineNumber] = richText
 		end,
 	})
 

@@ -134,10 +134,15 @@ local function scanSource(
 	-- generic argument brackets, typeofDepth suspends type classification
 	-- inside typeof(...) since it takes a value expression, and the alias
 	-- flags carry a "type Name = ..." statement through its equals sign.
+	-- typeExpectsWord arms whenever the next identifier can extend the type
+	-- expression, which is right after entering the context or a connector
+	-- operator. An identifier arriving unarmed means a new value expression
+	-- started on the same line, so the context exits instead of swallowing it.
 	local typeMode = false
 	local typeEntryDepth = 0
 	local typeAngle = 0
 	local typeContinues = false
+	local typeExpectsWord = false
 	local typeofDepth: number? = nil
 	local typeofArmed = false
 	local aliasNamePending = false
@@ -180,22 +185,36 @@ local function scanSource(
 		typeMode = true
 		typeEntryDepth = depth
 		typeAngle = 0
+		typeExpectsWord = true
 		typeofDepth = nil
 	end
 
 	local function exitTypeMode()
 		typeMode = false
 		typeAngle = 0
+		typeExpectsWord = false
 		typeofDepth = nil
 		aliasAwaitEquals = false
 	end
 
 	--[[
 		Ends the type context when a line break lands at its entry depth,
-		unless the last significant token promised a continuation.
+		unless the last significant token promised a continuation or the next
+		line leads with a union bar, an intersection ampersand, or a return
+		arrow. No statement can start with those bytes, so a line leading with
+		one can only be continuing the type expression. The scanner sits on
+		the first byte after the whitespace run when this is called, which is
+		what makes the peek a plain read of the current position.
 	]]
 	local function checkTypeNewline()
 		if typeMode and depth <= typeEntryDepth and typeAngle == 0 and not typeContinues and not aliasAwaitEquals then
+			local nextByte = string.byte(source, index)
+			if nextByte == BYTE_PIPE or nextByte == BYTE_AMPERSAND then
+				return
+			end
+			if nextByte == BYTE_DASH and string.byte(source, index + 1) == BYTE_GREATER_THAN then
+				return
+			end
 			exitTypeMode()
 		end
 	end
@@ -241,12 +260,83 @@ local function scanSource(
 	end
 
 	--[[
+		Reads the level of a long bracket opener at the given position,
+		returning the count of equals signs or nil when it is not one.
+	]]
+	local function matchLongOpen(position: number): number?
+		if string.byte(source, position) ~= BYTE_OPEN_BRACKET then
+			return nil
+		end
+		local level = 0
+		local cursor = position + 1
+		while string.byte(source, cursor) == BYTE_EQUALS do
+			level += 1
+			cursor += 1
+		end
+		-- The equals run can reach well past the byte the scanner ends up
+		-- consuming, so a failed match still counts as lookahead.
+		if cursor > maxRead then
+			maxRead = cursor
+		end
+		if string.byte(source, cursor) == BYTE_OPEN_BRACKET then
+			return level
+		end
+		return nil
+	end
+
+	--[[
+		Steps over whitespace and comments starting at the given position and
+		returns the position of the next significant byte, or nil when an
+		unfinished comment hides the rest of the source. Used only for
+		lookahead, so it never consumes input.
+	]]
+	local function skipInsignificant(position: number): number?
+		position = skipSpace(position)
+		while string.byte(source, position) == BYTE_DASH and string.byte(source, position + 1) == BYTE_DASH do
+			local level = matchLongOpen(position + 2)
+			if level ~= nil then
+				local closer = "]" .. string.rep("=", level) .. "]"
+				local _, finish = string.find(source, closer, position + 2 + level + 2, true)
+				if finish == nil then
+					-- The failed search read every remaining byte.
+					if size > maxRead then
+						maxRead = size
+					end
+					return nil
+				end
+				if finish > maxRead then
+					maxRead = finish
+				end
+				position = skipSpace(finish + 1)
+			else
+				local newlineAt = string.find(source, "\n", position + 2, true)
+				if newlineAt == nil then
+					if size > maxRead then
+						maxRead = size
+					end
+					return nil
+				end
+				if newlineAt > maxRead then
+					maxRead = newlineAt
+				end
+				position = skipSpace(newlineAt + 1)
+			end
+		end
+		return position
+	end
+
+	--[[
 		Decides whether a colon at the scanner's position starts a type
 		annotation rather than a method access. A method name is followed
 		immediately by call arguments, while an annotation's type is not.
+		Comments may sit on either side of the name, so the lookahead steps
+		over them the way the scanner itself will.
 	]]
 	local function isAnnotationColon(): boolean
-		local position = skipSpace(index)
+		local position = skipInsignificant(index)
+		if position == nil then
+			return false
+		end
 		local byte = string.byte(source, position)
 		if byte == nil then
 			return false
@@ -258,12 +348,21 @@ local function scanSource(
 		if afterChain == nil then
 			return false
 		end
-		local nextByte = string.byte(source, skipSpace(afterChain))
+		local afterName = skipInsignificant(afterChain)
+		if afterName == nil then
+			-- A name followed by an unfinished comment shows no call
+			-- arguments, so it reads as an annotation.
+			return true
+		end
+		-- An open bracket after the name is a long bracket string argument,
+		-- since no type syntax puts one directly after an identifier chain.
+		local nextByte = string.byte(source, afterName)
 		return nextByte ~= BYTE_OPEN_PAREN
 			and nextByte ~= BYTE_OPEN_BRACE
 			and nextByte ~= BYTE_QUOTE
 			and nextByte ~= BYTE_APOSTROPHE
 			and nextByte ~= BYTE_BACKTICK
+			and nextByte ~= BYTE_OPEN_BRACKET
 	end
 
 	--[[
@@ -337,6 +436,7 @@ local function scanSource(
 				if text == "typeof" then
 					emit("keyword", text)
 					typeofArmed = true
+					typeExpectsWord = false
 					return
 				end
 				-- nil, true, and false are singleton types, so they stay
@@ -344,6 +444,8 @@ local function scanSource(
 				-- ends the context.
 				if text ~= "nil" and text ~= "true" and text ~= "false" then
 					exitTypeMode()
+				else
+					typeExpectsWord = false
 				end
 			elseif text == "type" and isAliasHead() then
 				aliasNamePending = true
@@ -353,8 +455,14 @@ local function scanSource(
 		end
 
 		if typeMode and typeofDepth == nil then
-			emit("type", text)
-			return
+			if typeExpectsWord then
+				typeExpectsWord = false
+				emit("type", text)
+				return
+			end
+			-- The type expression cannot take another bare identifier, so
+			-- this one starts a new value expression and classifies below.
+			exitTypeMode()
 		end
 
 		if builtins[text] ~= nil then
@@ -388,6 +496,7 @@ local function scanSource(
 	local function scanNumber()
 		typeofArmed = false
 		typeContinues = false
+		typeExpectsWord = false
 		local start = index
 
 		repeat
@@ -460,6 +569,7 @@ local function scanSource(
 	local function scanQuoted(quoteByte: number)
 		typeofArmed = false
 		typeContinues = false
+		typeExpectsWord = false
 		local start = index
 		local sawNewline = false
 		index += 1
@@ -486,37 +596,18 @@ local function scanSource(
 	end
 
 	--[[
-		Reads the level of a long bracket opener at the given position,
-		returning the count of equals signs or nil when it is not one.
-	]]
-	local function matchLongOpen(position: number): number?
-		if string.byte(source, position) ~= BYTE_OPEN_BRACKET then
-			return nil
-		end
-		local level = 0
-		local cursor = position + 1
-		while string.byte(source, cursor) == BYTE_EQUALS do
-			level += 1
-			cursor += 1
-		end
-		-- The equals run can reach well past the byte the scanner ends up
-		-- consuming, so a failed match still counts as lookahead.
-		if cursor > maxRead then
-			maxRead = cursor
-		end
-		if string.byte(source, cursor) == BYTE_OPEN_BRACKET then
-			return level
-		end
-		return nil
-	end
-
-	--[[
 		Scans from a long bracket opener through its matching closer, or to
 		the end of the source when unfinished, emitting the given kind.
 	]]
 	local function scanLongBracket(kind: string, start: number, level: number, bodyStart: number)
 		typeofArmed = false
-		typeContinues = false
+		-- Comments stay transparent to the type context so an annotation can
+		-- carry past one, while a long string ends any continuation the same
+		-- way a quoted string does.
+		if kind == "string" then
+			typeContinues = false
+			typeExpectsWord = false
+		end
 		local closer = "]" .. string.rep("=", level) .. "]"
 		local _, finish = string.find(source, closer, bodyStart, true)
 		if finish ~= nil then
@@ -685,6 +776,10 @@ local function scanSource(
 		end
 		typeofArmed = false
 		typeContinues = continues
+		-- Continuing operators are exactly the ones a type word can follow,
+		-- except the semicolon, which separates table type fields but never
+		-- carries a context past a line break.
+		typeExpectsWord = continues or operator == ";"
 	end
 
 	--[[
@@ -932,7 +1027,7 @@ local function scanRestartable(
 		if coroutine.status(thread) ~= "dead" then
 			-- The type checks narrow resume's untyped results. The first two
 			-- always pass since the scanner only yields string pairs, while
-			-- the snapshot values are genuinely absent on most tokens.
+			-- the snapshot values are missing on most tokens.
 			local success, kind, content, restartDepth, watermark = coroutine.resume(thread)
 			if success and type(kind) == "string" and type(content) == "string" then
 				return kind,

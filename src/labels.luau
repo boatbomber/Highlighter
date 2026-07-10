@@ -65,8 +65,10 @@ local function getLabelingInfo(textObject: types.TextObject): types.LabelingInfo
 		return nil
 	end
 
-	local src = RichText.normalize(textObject.Text)
-	local numLines = #string.split(src, "\n")
+	-- One rich line builds per source line, so the cache length is the line
+	-- count and the alignment path never rescans the source. Empty sources
+	-- keep a floor of one line.
+	local numLines = math.max(#data.RichLines, 1)
 
 	local textBounds = getTextBounds(textObject, numLines)
 	local textHeight = textBounds.Y / numLines
@@ -131,10 +133,9 @@ local function populateLabels(props: types.HighlightProps)
 	local lexer = props.lexer or defaultLexer
 	local customLang = props.customLang
 
-	-- A changed lexer or customLang invalidates every existing line, so it
-	-- forces a full rebuild, while a source change alone lets the line diff
-	-- below skip unchanged lines. When nothing changed at all, the update
-	-- skips entirely unless the caller forces one.
+	-- When nothing changed at all, the update skips entirely unless the
+	-- caller forces one. Everything else rebuilds every line, and the per
+	-- line cache below decides which labels actually need a write.
 	local forceUpdate = props.forceUpdate == true or lexer ~= data.Lexer or customLang ~= data.CustomLang
 	if data.Text == src and not forceUpdate then
 		return
@@ -148,17 +149,15 @@ local function populateLabels(props: types.HighlightProps)
 	writableTextObject.Text = src
 
 	local lineLabels = data.Labels
-	local previousLines = data.Lines
+	local richLines = data.RichLines
 
-	local lines = string.split(src, "\n")
-
-	data.Lines = lines
 	data.Text = src
 	data.Lexer = lexer
 	data.CustomLang = customLang
 
 	-- Empty sources blank the existing labels and skip the lexer entirely.
 	if src == "" then
+		table.clear(richLines)
 		for l = 1, #lineLabels do
 			if lineLabels[l].Text == "" then
 				continue
@@ -209,22 +208,27 @@ local function populateLabels(props: types.HighlightProps)
 		lexer = lexer,
 		customLang = customLang,
 		alwaysTagText = false,
-		shouldBuildLine = function(lineNumber: number): boolean
-			return forceUpdate or lines[lineNumber] ~= previousLines[lineNumber]
-		end,
-		onLine = function(lineNumber: number, richText: string?)
-			-- Labels exist for every line, while text only writes on lines
-			-- that were rebuilt so unchanged labels keep their content.
+		onLine = function(lineNumber: number, richText: string)
+			-- Labels exist for every line, while text only writes when the
+			-- built output differs from what the label already shows. The
+			-- comparison is against built output rather than raw source
+			-- lines because an edit on an earlier line can change a later
+			-- line's tokens without touching its text. A forced update
+			-- distrusts the labels entirely and writes every line, which is
+			-- what lets refresh repair externally clobbered label text.
 			local lineLabel = getOrCreateLabel(lineNumber)
-			if richText ~= nil then
+			if forceUpdate or richLines[lineNumber] ~= richText then
+				richLines[lineNumber] = richText
 				lineLabel.Text = richText
 			end
 		end,
 	})
 
 	-- Labels beyond the last source line are emptied rather than destroyed so
-	-- they can be reused when the source grows again.
+	-- they can be reused when the source grows again, and their cached lines
+	-- clear with them so regrown sources rebuild from scratch.
 	for l = lastLine + 1, #lineLabels do
+		richLines[l] = nil
 		if lineLabels[l].Text == "" then
 			continue
 		end
@@ -239,9 +243,6 @@ end
 ]]
 function Labels.highlight(props: types.HighlightProps): () -> ()
 	local textObject = props.textObject
-	local src = RichText.normalize(props.src or textObject.Text)
-	local lexer = props.lexer or defaultLexer
-	local customLang = props.customLang
 
 	-- A tracked textObject only needs its labels repopulated and realigned.
 	if cleanups[textObject] then
@@ -250,11 +251,15 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 		return cleanups[textObject]
 	end
 
+	local lexer = props.lexer or defaultLexer
+	local customLang = props.customLang
+
 	-- Luau cannot assign properties through a union of instance types, so writes
 	-- go through this narrowed alias. TextBox shares every property written here.
+	-- The normalized source itself writes inside populateLabels, which is the
+	-- one place that computes it.
 	local writableTextObject = textObject :: TextLabel
 	writableTextObject.RichText = false
-	writableTextObject.Text = src
 	writableTextObject.TextXAlignment = Enum.TextXAlignment.Left
 	writableTextObject.TextYAlignment = Enum.TextYAlignment.Top
 	writableTextObject.BackgroundColor3 = Theme.getColor("background")
@@ -276,7 +281,7 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 	local data: types.ObjectData = {
 		Text = "",
 		Labels = {},
-		Lines = {},
+		RichLines = {},
 		Lexer = lexer,
 		CustomLang = customLang,
 	}
@@ -335,9 +340,13 @@ end
 ]]
 function Labels.refresh(): ()
 	for textObject, data in textObjectData do
-		for _, lineLabel in data.Labels do
-			lineLabel.TextColor3 = Theme.getColor("iden")
-		end
+		-- The base object colors only write on the first highlight call, so
+		-- a theme change reapplies them here. Label colors realign inside
+		-- the highlight call below. The write goes through a narrowed alias
+		-- because Luau cannot assign through a union of instance types.
+		local writableTextObject = textObject :: TextLabel
+		writableTextObject.BackgroundColor3 = Theme.getColor("background")
+		writableTextObject.TextColor3 = Theme.getColor("iden")
 
 		Labels.highlight({
 			textObject = textObject,

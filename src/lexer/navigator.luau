@@ -49,6 +49,11 @@ end
 
 --[[
 	Builds a navigator that reads tokens through the given scan function.
+	Every method except Destroy closes over nav instead of reading through
+	self because the new solver types self generically there, which blocks
+	compound assignment, widens the token cache, and rejects internal calls
+	between methods. The ignored parameter keeps them callable as methods
+	alongside the rest.
 ]]
 function Navigator.new(scan: ScanFunction)
 	local nav = {
@@ -96,6 +101,9 @@ function Navigator.new(scan: ScanFunction)
 		end)
 	end
 
+	--[[
+		Clears every field so a discarded navigator keeps nothing alive.
+	]]
 	function nav:Destroy()
 		self.Source = nil
 		self.realIndex = nil
@@ -107,11 +115,10 @@ function Navigator.new(scan: ScanFunction)
 		self.restartWatermarks = nil
 	end
 
-	-- Every method except Destroy closes over nav instead of reading through
-	-- self because the new solver types self generically there, which blocks
-	-- compound assignment, widens the token cache, and rejects internal calls
-	-- between methods. The ignored parameter keeps them callable as methods
-	-- alongside the rest.
+	--[[
+		Points the navigator at a new source, dropping every cached token
+		and starting a fresh scan from the beginning.
+	]]
 	function nav.SetSource(_self: any, sourceString: string)
 		nav.Source = sourceString
 
@@ -125,6 +132,11 @@ function Navigator.new(scan: ScanFunction)
 		nav.scanThread = buildScanThread(nil, nil)
 	end
 
+	--[[
+		Swaps in an edited source while keeping every cached token the edit
+		provably left untouched, resuming the scan from the latest restart
+		snapshot inside the shared prefix.
+	]]
 	function nav.HotswapSource(_self: any, sourceString: string)
 		if sourceString == nav.Source then
 			nav.userIndex = 0
@@ -176,13 +188,20 @@ function Navigator.new(scan: ScanFunction)
 		nav.scanThread = buildScanThread(nav.endOffsets[restartToken] + 1, seed)
 	end
 
+	--[[
+		Advances to the next token and returns it, reading from the cache
+		when the position sits behind the scan.
+	]]
 	function nav.Next(_self: any): ...string?
-		nav.userIndex += 1
+		-- The position only advances when a token actually comes back, so
+		-- reads past the end never drift where relative Peeks resolve.
+		local goalIndex = nav.userIndex + 1
 
-		if nav.realIndex >= nav.userIndex then
+		if nav.realIndex >= goalIndex then
+			nav.userIndex = goalIndex
 			-- The entry indexes explicitly rather than unpacking so restart
 			-- bookkeeping can never leak extra return values to callers.
-			local entry = nav.TokenCache[nav.userIndex]
+			local entry = nav.TokenCache[goalIndex]
 			return entry[1], entry[2]
 		else
 			local scanThread = nav.scanThread
@@ -191,6 +210,7 @@ function Navigator.new(scan: ScanFunction)
 			else
 				local success, token, content = coroutine.resume(scanThread)
 				if success and token then
+					nav.userIndex = goalIndex
 					return token, content
 				else
 					return
@@ -199,6 +219,11 @@ function Navigator.new(scan: ScanFunction)
 		end
 	end
 
+	--[[
+		Returns the token peekAmount away from the current position without
+		moving it, scanning forward on demand. Peeks landing outside the
+		token range return nothing.
+	]]
 	function nav.Peek(_self: any, peekAmount: number): ...string?
 		local goalIndex = nav.userIndex + peekAmount
 

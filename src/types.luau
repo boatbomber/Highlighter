@@ -58,7 +58,7 @@ export type LabelingInfo = {
 export type ObjectData = {
 	Text: string,
 	Labels: { TextLabel },
-	Lines: { string },
+	RichLines: { string },
 	Lexer: Lexer?,
 	CustomLang: { [string]: string }?,
 }

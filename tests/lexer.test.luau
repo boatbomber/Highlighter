@@ -295,6 +295,18 @@ describe("type positions", function()
 	it("continues a union past a line break", function()
 		expect(kindAt("local x: number |\n@@string")).toBe("type")
 	end)
+
+	it("keeps an annotation whose type sits past a comment", function()
+		expect(kindAt("local x: -- why\n@@number = 3")).toBe("type")
+		expect(kindAt("local x: --[[why]] @@number = 3")).toBe("type")
+		expect(kindAt("local x: --[[\nwhy]] @@number = 3")).toBe("type")
+	end)
+
+	it("continues a union written with leading operators", function()
+		expect(kindAt("type Mode =\n\t| Alpha\n\t| @@Beta")).toBe("type")
+		expect(kindAt("local x: Alpha\n\t& @@Beta")).toBe("type")
+		expect(kindAt("type F = (number)\n\t-> @@string")).toBe("type")
+	end)
 end)
 
 describe("value positions", function()
@@ -308,6 +320,18 @@ describe("value positions", function()
 
 	it("never types comparisons", function()
 		expect(kindAt("local ok = a < @@b")).toBe("iden")
+	end)
+
+	it("never types method calls taking long bracket strings", function()
+		expect(kindAt("obj:@@method [[arg]]")).toBe("iden")
+		expect(kindAt("y = a:@@concat [=[chunk]=]")).toBe("iden")
+	end)
+
+	it("returns to value context after an annotation without an initializer", function()
+		expect(kindAt("local x: string @@print(x)")).toBe("builtin")
+		expect(kindAt("local x: string print(@@x)")).toBe("iden")
+		expect(kindAt("local a: Foo<T> @@print(a)")).toBe("builtin")
+		expect(kindAt("local b: true @@print(b)")).toBe("builtin")
 	end)
 
 	it("exits type context at the right boundaries", function()
@@ -471,6 +495,23 @@ describe("navigator", function()
 		expect(kind).toBe("iden")
 		expect(nav:Next()).toBe(nil)
 		expect(nav:Next()).toBe(nil)
+	end)
+
+	it("keeps its position when reading past the end", function()
+		local nav = lexer.navigator()
+		nav:SetSource("local x = 1")
+
+		-- Ten reads drain the four tokens and then keep reading past the end.
+		for _ = 1, 10 do
+			nav:Next()
+		end
+		expect(nav:Next()).toBe(nil)
+
+		local kind, content = nav:Peek(0)
+		expect(kind).toBe("number")
+		expect(content).toBe("1")
+		kind = nav:Peek(-1)
+		expect(kind).toBe("operator")
 	end)
 
 	it("resets its position when the source changes", function()
