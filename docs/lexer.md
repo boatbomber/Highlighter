@@ -12,9 +12,11 @@ Two invariants matter to consumers. Token contents concatenate back to the exact
 
 `Lexer.scanEach(source, onToken)` walks the same scanner but delivers every token through a direct callback instead of an iterator, which skips a coroutine round trip per token. The rich text builder reads whole sources, so it uses this form whenever a lexer provides it.
 
+`Lexer.scanRestartable(source, startIndex, seed)` is the iterator the navigator reads through. Its returns carry the restart snapshots described in the navigator section below, and its seed parameter restores the state a resumed scan needs beyond its start position. `Lexer.scan` is a thin adapter over it that drops the snapshot values.
+
 ## How a scan runs
 
-`Lexer.scan` wraps `scanSource` in a coroutine and hands `coroutine.yield` in as the emit callback, so tokens stream out lazily as the consumer pulls them. All scanner state lives in locals inside `scanSource`, which keeps concurrent scans of different sources fully independent.
+`Lexer.scanRestartable` wraps `scanSource` in a coroutine and hands `coroutine.yield` in as the emit callback, so tokens stream out lazily as the consumer pulls them. All scanner state lives in locals inside `scanSource`, which keeps concurrent scans of different sources fully independent.
 
 `scanSource` is one loop over byte positions. Each iteration reads the byte at the current index and dispatches on it, checking in this order. Whitespace merges into the previous token. An identifier start byte goes to `scanIden`. A digit, or a dot followed by a digit, goes to `scanNumber`. Two dashes go to `scanComment`. A quote or apostrophe goes to `scanQuoted`. A backtick starts an interpolated string. A closing brace whose depth matches the top of the interpolation hole stack resumes the surrounding interpolated string. An opening bracket that forms a long bracket opener goes to `scanLongBracket` as a string. An at sign goes to `scanAttribute`. Everything else goes to `scanOperator`.
 

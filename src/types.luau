@@ -44,9 +44,6 @@ export type Lexer = {
 }
 
 export type LabelingInfo = {
-	data: ObjectData,
-	numLines: number,
-	textBounds: Vector2,
 	textHeight: number,
 	innerAbsoluteSize: Vector2,
 	textColor: Color3,

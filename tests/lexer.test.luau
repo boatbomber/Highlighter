@@ -9,6 +9,7 @@ local it = JestGlobals.it
 local expect = JestGlobals.expect
 
 local lexer = require(Packages:WaitForChild("Highlighter"):WaitForChild("lexer"))
+local Navigator = require(Packages:WaitForChild("Highlighter"):WaitForChild("lexer"):WaitForChild("navigator"))
 
 --[[
 	Finds the "@@" caret marker in a snippet, removes it, scans the remaining
@@ -571,22 +572,47 @@ local function drain(nav): ({ string }, { string })
 end
 
 --[[
-	Fully scans oldSource through a navigator, hotswaps it to newSource, and
-	asserts the resulting token stream matches a fresh scan of newSource
-	exactly. When expectReuse is true it also asserts that cached tokens
-	survived the swap instead of the full rescan fallback running.
+	Builds a navigator whose scans record their start bytes, so tests can
+	prove a hotswap resumed partway through the source instead of rescanning,
+	without reading the navigator's internals.
 ]]
-local function expectHotswapMatchesFresh(oldSource: string, newSource: string, expectReuse: boolean?)
-	local swapped = lexer.navigator()
+local function navigatorWithScanSpy(): (any, { number })
+	local scanStarts: { number } = {}
+	local nav = Navigator.new(function(src: string, startIndex: number?, seed: any)
+		table.insert(scanStarts, startIndex or 1)
+		return lexer.scanRestartable(src, startIndex, seed)
+	end)
+	return nav, scanStarts
+end
+
+--[[
+	Scans oldSource through a navigator, hotswaps it to newSource, and
+	asserts the resulting token stream matches a fresh scan of newSource
+	exactly. preScanCount controls how many tokens are read before the swap,
+	with nil meaning a full drain. When expectReuse is true it also asserts
+	that the post swap scan resumed past the first byte, which is what cached
+	tokens surviving looks like from outside, rather than the full rescan
+	fallback running.
+]]
+local function expectHotswapMatchesFresh(
+	oldSource: string,
+	newSource: string,
+	expectReuse: boolean?,
+	preScanCount: number?
+)
+	local swapped, scanStarts = navigatorWithScanSpy()
 	swapped:SetSource(oldSource)
-	-- selene: allow(empty_loop)
-	while swapped:Next() ~= nil do
+	if preScanCount == nil then
+		-- selene: allow(empty_loop)
+		while swapped:Next() ~= nil do
+		end
+	else
+		for _ = 1, preScanCount do
+			swapped:Next()
+		end
 	end
 
 	swapped:HotswapSource(newSource)
-	if expectReuse then
-		expect(swapped.realIndex > 0).toBe(true)
-	end
 
 	local fresh = lexer.navigator()
 	fresh:SetSource(newSource)
@@ -595,6 +621,11 @@ local function expectHotswapMatchesFresh(oldSource: string, newSource: string, e
 	local freshKinds, freshContents = drain(fresh)
 	expect(swappedContents).toEqual(freshContents)
 	expect(swappedKinds).toEqual(freshKinds)
+
+	if expectReuse then
+		expect(#scanStarts).toBe(2)
+		expect(scanStarts[2] > 1).toBe(true)
+	end
 end
 
 describe("hotswap reuse", function()
@@ -646,52 +677,30 @@ describe("hotswap reuse", function()
 
 	it("keeps everything when hotswapped to an identical source", function()
 		local source = string.rep("local x = math.floor(1.5)\n", 5)
-		local nav = lexer.navigator()
+		local nav, scanStarts = navigatorWithScanSpy()
 		nav:SetSource(source)
 		-- selene: allow(empty_loop)
 		while nav:Next() ~= nil do
 		end
-		local cachedCount = nav.realIndex
 
 		nav:HotswapSource(source)
-		expect(nav.realIndex).toBe(cachedCount)
 
 		local kind, content = nav:Next()
 		expect(kind).toBe("keyword")
 		expect(content).toBe("local ")
+
+		-- The identical swap keeps the whole cache, so the only scan that
+		-- ever started is the one SetSource ran.
+		expect(#scanStarts).toBe(1)
 	end)
 
 	it("hotswaps before anything was scanned", function()
-		local nav = lexer.navigator()
-		nav:SetSource("local x = 1")
-		nav:HotswapSource("local y = 2")
-
-		local fresh = lexer.navigator()
-		fresh:SetSource("local y = 2")
-
-		local swappedKinds, swappedContents = drain(nav)
-		local freshKinds, freshContents = drain(fresh)
-		expect(swappedContents).toEqual(freshContents)
-		expect(swappedKinds).toEqual(freshKinds)
+		expectHotswapMatchesFresh("local x = 1", "local y = 2", nil, 0)
 	end)
 
 	it("hotswaps after a partial scan", function()
 		local body = string.rep("local x = 1\n", 10)
-		local nav = lexer.navigator()
-		nav:SetSource(body .. "print(1)")
-		for _ = 1, 6 do
-			nav:Next()
-		end
-
-		nav:HotswapSource(body .. "print(2)")
-
-		local fresh = lexer.navigator()
-		fresh:SetSource(body .. "print(2)")
-
-		local swappedKinds, swappedContents = drain(nav)
-		local freshKinds, freshContents = drain(fresh)
-		expect(swappedContents).toEqual(freshContents)
-		expect(swappedKinds).toEqual(freshKinds)
+		expectHotswapMatchesFresh(body .. "print(1)", body .. "print(2)", nil, 6)
 	end)
 
 	it("peeks in both directions after a hotswap", function()

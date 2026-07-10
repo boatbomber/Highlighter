@@ -271,6 +271,50 @@ describe("automatic updates", function()
 		expect(string.find(getLineLabels(textObject)[1].Text, customHex, 1, true) ~= nil).toBe(true)
 	end)
 
+	it("applies textObject font and size changes to the labels", function()
+		local textObject = makeTextObject("local x = 1")
+		Highlighter.highlight({ textObject = textObject })
+
+		textObject.TextSize = 24
+		local resized = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[1]
+			return lineLabel ~= nil and lineLabel.TextSize == 24
+		end)
+		expect(resized).toBe(true)
+
+		local newFont = Font.fromEnum(Enum.Font.Code)
+		textObject.FontFace = newFont
+		local refonted = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[1]
+			return lineLabel ~= nil and lineLabel.FontFace == newFont
+		end)
+		expect(refonted).toBe(true)
+	end)
+
+	it("recreates the label folder when it goes missing", function()
+		local textObject = makeTextObject("local x = 1")
+		local cleanup = Highlighter.highlight({ textObject = textObject })
+
+		-- Destroying the folder takes every label with it, and destroyed
+		-- instances can never be reparented, so the highlighter has to
+		-- rebuild from scratch on the next update.
+		local folder = textObject:FindFirstChild("SyntaxHighlights") :: Instance
+		folder:Destroy()
+
+		textObject.Text = "print(1)"
+
+		local builtinHex = Highlighter.getTokenColor("builtin"):ToHex()
+		local healed = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[1]
+			return lineLabel ~= nil and string.find(lineLabel.Text, builtinHex, 1, true) ~= nil
+		end)
+		expect(healed).toBe(true)
+
+		-- Cleanup removes the recreated folder rather than the stale original.
+		cleanup()
+		expect(textObject:FindFirstChild("SyntaxHighlights")).toBe(nil)
+	end)
+
 	it("starts an empty source with no labels and fills in once text arrives", function()
 		local textObject = makeTextObject("")
 		Highlighter.highlight({ textObject = textObject })

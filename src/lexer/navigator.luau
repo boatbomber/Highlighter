@@ -67,11 +67,13 @@ function Navigator.new(scan: ScanFunction)
 		-- Restart bookkeeping, parallel to TokenCache. endOffsets holds each
 		-- token's cumulative byte length, so endOffsets[k] + 1 is where the
 		-- token after k starts. restartDepths holds the bracket depth right
-		-- after a token when the scan can safely resume there and false when
-		-- it cannot, and restartWatermarks holds the furthest byte the scan
-		-- had read by that point, lookahead included.
+		-- after a token and restartWatermarks the furthest byte the scan had
+		-- read by that point, lookahead included. Tokens the scan cannot
+		-- resume after store zero in both, and since a real watermark always
+		-- covers at least the first token plus its peek slack, a zero
+		-- watermark alone marks the absent snapshot.
 		endOffsets = table.create(50) :: { number },
-		restartDepths = table.create(50) :: { number | false },
+		restartDepths = table.create(50) :: { number },
 		restartWatermarks = table.create(50) :: { number },
 	}
 
@@ -93,7 +95,7 @@ function Navigator.new(scan: ScanFunction)
 					nav.restartDepths[tokenIndex] = restartDepth
 					nav.restartWatermarks[tokenIndex] = watermark
 				else
-					nav.restartDepths[tokenIndex] = false
+					nav.restartDepths[tokenIndex] = 0
 					nav.restartWatermarks[tokenIndex] = 0
 				end
 				coroutine.yield(token, content)
@@ -153,7 +155,10 @@ function Navigator.new(scan: ScanFunction)
 		local restartToken = 0
 		local candidate = nav.realIndex
 		while candidate > 0 do
-			if nav.restartDepths[candidate] ~= false and nav.restartWatermarks[candidate] <= sharedPrefix then
+			-- A zero watermark marks a token with no snapshot, and it needs
+			-- its own check because zero always sits inside the prefix.
+			local watermark = nav.restartWatermarks[candidate]
+			if watermark ~= 0 and watermark <= sharedPrefix then
 				restartToken = candidate
 				break
 			end
@@ -180,7 +185,7 @@ function Navigator.new(scan: ScanFunction)
 		local previousEntry = cache[restartToken - 1]
 		local secondPreviousEntry = cache[restartToken - 2]
 		local seed: ScanSeed = {
-			depth = nav.restartDepths[restartToken] :: number,
+			depth = nav.restartDepths[restartToken],
 			previous1 = restartEntry[2],
 			previous2 = if previousEntry ~= nil then previousEntry[2] else "",
 			previous3 = if secondPreviousEntry ~= nil then secondPreviousEntry[2] else "",

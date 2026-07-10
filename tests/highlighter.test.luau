@@ -9,9 +9,11 @@ local it = JestGlobals.it
 local expect = JestGlobals.expect
 
 local Highlighter = require(Packages:WaitForChild("Highlighter"))
+local ThemeModule = require(Packages:WaitForChild("Highlighter"):WaitForChild("theme"))
 
-local ALL_TOKEN_KINDS =
-	{ "background", "iden", "keyword", "builtin", "type", "string", "number", "comment", "operator", "custom" }
+-- The theme owns the canonical token name list, so the tests iterate it
+-- rather than maintaining a copy that could drift.
+local ALL_TOKEN_KINDS = ThemeModule.tokenNames
 
 --[[
 	Grabs the hex string for a token color so tests can look for it inside
@@ -229,10 +231,27 @@ describe("buildRichTextLines", function()
 end)
 
 describe("token colors", function()
+	it("exposes the canonical token name list with a color for each", function()
+		expect(#ThemeModule.tokenNames).toBe(10)
+		-- The color map reads directly because getTokenColor falls back to
+		-- iden, which would hide a missing entry.
+		for _, kind in ThemeModule.tokenNames do
+			expect(ThemeModule.tokenColors[kind]).toEqual(expect.any("Color3"))
+		end
+	end)
+
 	it("defines a color for every token kind", function()
 		for _, kind in ALL_TOKEN_KINDS do
 			expect(Highlighter.getTokenColor(kind)).toEqual(expect.any("Color3"))
 		end
+	end)
+
+	it("falls back to the identifier color for unknown token names", function()
+		-- Custom lexers can emit kinds outside the built in set, and their
+		-- color reads land here through the same widened string cast the rich
+		-- text builder uses.
+		local color = Highlighter.getTokenColor("unknownKind" :: any)
+		expect(color).toEqual(Highlighter.getTokenColor("iden"))
 	end)
 
 	it("returns colors assigned through setTokenColors", function()

@@ -70,6 +70,17 @@ local IS_IDEN_START = constants.IS_IDEN_START
 local IS_IDEN_CHAR = constants.IS_IDEN_CHAR
 local IS_NUMBER_TAIL = constants.IS_NUMBER_TAIL
 
+-- How many bytes past a token's start the restart watermark reserves for
+-- the fixed peeks that never fold into maxRead, which are the one and two
+-- byte reads in scanOperator, the dispatcher, and checkTypeNewline. The
+-- deepest of those reaches one byte past the next token's start, from the
+-- third byte read of a lone dot operator and the arrow peek after a line
+-- break, and the second byte keeps a margin over them. A new peek reaching
+-- deeper than this must fold its position into maxRead the way the long
+-- lookahead helpers do, or hotswap reuse will silently trust tokens whose
+-- lookahead crossed an edit.
+local FIXED_PEEK_SLACK = 2
+
 --[[
 	Scans one source string, calling yield(kind, content) for every token.
 	All scanner state lives in locals here so concurrent scans of different
@@ -921,10 +932,10 @@ local function scanSource(
 			-- scan would need. The point is restartable when every carried
 			-- flag is in its ground state, since depth is seedable and the
 			-- previous token texts come back from the navigator's cache. The
-			-- watermark adds two bytes of slack to cover the fixed peeks the
-			-- scan functions make past their consumed bytes.
+			-- watermark reserves slack for the fixed peeks the scan functions
+			-- make past their consumed bytes.
 			snapDepth = depth
-			snapWatermark = math.max(maxRead, index + 2)
+			snapWatermark = math.max(maxRead, index + FIXED_PEEK_SLACK)
 			snapRestartable = not typeMode and holeStack[1] == nil and not aliasNamePending and not typeofArmed
 			if IS_IDEN_START[byte] then
 				scanIden()
@@ -972,49 +983,12 @@ local function scanSource(
 end
 
 --[[
-	Creates a token iterator over the given source. Each call to the
-	returned function produces the next (kind, content) pair. When a
-	startIndex is given, scanning begins at that byte with fresh context,
-	so tokens whose meaning depends on what came earlier (type positions,
-	interpolation holes, library members) may classify differently than
-	they would in a full scan.
+	Creates a token iterator whose returns also carry restart snapshots, and
+	which accepts a seed for resuming a scan partway through a source. The
+	navigator reads through this richer form so HotswapSource can reuse
+	cached tokens, and tests wrap it to observe where a resumed scan begins.
 ]]
-function Lexer.scan(source: string, startIndex: number?): () -> (string?, string)
-	local thread = coroutine.create(function()
-		scanSource(source, coroutine.yield, startIndex)
-	end)
-
-	return function(): (string?, string)
-		if coroutine.status(thread) ~= "dead" then
-			-- The type checks narrow resume's untyped results and always pass,
-			-- since the scanner only ever yields a pair of strings.
-			local success, kind, content = coroutine.resume(thread)
-			if success and type(kind) == "string" and type(content) == "string" then
-				return kind, content
-			end
-		end
-		return nil, ""
-	end
-end
-
---[[
-	Calls onToken with every token of the source in order. This walks the
-	same scanner as Lexer.scan without the iterator's coroutine, which makes
-	it the cheapest way to read a whole source when tokens can be handled as
-	they arrive. The extra optional parameters carry the restart snapshots
-	the scanner attaches to some tokens, which callers are free to ignore.
-]]
-function Lexer.scanEach(source: string, onToken: (string, string, number?, number?) -> ())
-	scanSource(source, onToken, nil, nil)
-end
-
---[[
-	Creates a token iterator like Lexer.scan whose returns also carry restart
-	snapshots, and which accepts a seed for resuming a scan partway through a
-	source. The navigator reads through this richer form so HotswapSource can
-	reuse cached tokens, and nothing else needs it, so it stays local.
-]]
-local function scanRestartable(
+function Lexer.scanRestartable(
 	source: string,
 	startIndex: number?,
 	seed: Navigator.ScanSeed?
@@ -1041,11 +1015,41 @@ local function scanRestartable(
 end
 
 --[[
+	Creates a token iterator over the given source. Each call to the
+	returned function produces the next (kind, content) pair. When a
+	startIndex is given, scanning begins at that byte with fresh context,
+	so tokens whose meaning depends on what came earlier (type positions,
+	interpolation holes, library members) may classify differently than
+	they would in a full scan.
+]]
+function Lexer.scan(source: string, startIndex: number?): () -> (string?, string)
+	local iterate = Lexer.scanRestartable(source, startIndex, nil)
+
+	return function(): (string?, string)
+		-- The wrapper drops the restart snapshot values so they never leak
+		-- into callers reading extra returns.
+		local kind, content = iterate()
+		return kind, content
+	end
+end
+
+--[[
+	Calls onToken with every token of the source in order. This walks the
+	same scanner as Lexer.scan without the iterator's coroutine, which makes
+	it the cheapest way to read a whole source when tokens can be handled as
+	they arrive. The extra optional parameters carry the restart snapshots
+	the scanner attaches to some tokens, which callers are free to ignore.
+]]
+function Lexer.scanEach(source: string, onToken: (string, string, number?, number?) -> ())
+	scanSource(source, onToken, nil, nil)
+end
+
+--[[
 	Builds a token navigator supporting non-sequential reads over a source,
 	caching scanned tokens so earlier ones can be revisited.
 ]]
 function Lexer.navigator()
-	return Navigator.new(scanRestartable)
+	return Navigator.new(Lexer.scanRestartable)
 end
 
 return Lexer

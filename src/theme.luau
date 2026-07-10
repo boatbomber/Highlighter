@@ -8,7 +8,43 @@
 
 local types = require(script.Parent.types)
 
+-- The canonical token name list, one entry per TokenName. The annotation
+-- makes a typo here fail analyze, and the load check below keeps the color
+-- and Studio style maps complete against the list.
+local tokenNames: { types.TokenName } = {
+	"background",
+	"iden",
+	"keyword",
+	"builtin",
+	"type",
+	"string",
+	"number",
+	"comment",
+	"operator",
+	"custom",
+}
+
+-- The Studio script editor color for each token name, read when a plugin
+-- mirrors the editor theme. Enum items are plain globals, so building this
+-- outside a plugin is safe. The keys stay strings because the canonical list
+-- indexes this map with widened iteration elements, and the load check below
+-- catches a typo or a missing name.
+local studioStyleGuideColors: { [string]: Enum.StudioStyleGuideColor } = {
+	["background"] = Enum.StudioStyleGuideColor.ScriptBackground,
+	["iden"] = Enum.StudioStyleGuideColor.ScriptText,
+	["keyword"] = Enum.StudioStyleGuideColor.ScriptKeyword,
+	["builtin"] = Enum.StudioStyleGuideColor.ScriptBuiltInFunction,
+	["type"] = Enum.StudioStyleGuideColor.ScriptLuauKeyword,
+	["string"] = Enum.StudioStyleGuideColor.ScriptString,
+	["number"] = Enum.StudioStyleGuideColor.ScriptNumber,
+	["comment"] = Enum.StudioStyleGuideColor.ScriptComment,
+	["operator"] = Enum.StudioStyleGuideColor.ScriptOperator,
+	["custom"] = Enum.StudioStyleGuideColor.ScriptBool,
+}
+
 local Theme = {
+	tokenNames = tokenNames,
+
 	-- Starts with default dark theme colors.
 	-- Keyed by string rather than TokenName because iterating
 	-- widens the keys, while the public getters stay strictly typed.
@@ -25,6 +61,16 @@ local Theme = {
 		["custom"] = Color3.fromRGB(158, 119, 255),
 	} :: { [string]: Color3 },
 }
+
+-- A name missing from either map would silently render or theme wrong,
+-- since getColor falls back to iden and the Studio mapping would skip the
+-- name entirely, so module load verifies both against the canonical list.
+for _, tokenName in tokenNames do
+	local color: Color3? = Theme.tokenColors[tokenName]
+	assert(color ~= nil, `Theme.tokenColors is missing an entry for {tokenName}`)
+	local style: Enum.StudioStyleGuideColor? = studioStyleGuideColors[tokenName]
+	assert(style ~= nil, `studioStyleGuideColors is missing an entry for {tokenName}`)
+end
 
 -- Tracks the active Studio theme subscription so repeated calls to
 -- matchStudioSettings replace the connection instead of stacking new ones.
@@ -63,10 +109,18 @@ function Theme.setColors(tokenColors: types.TokenColors)
 end
 
 --[[
-	Looks up the active color for the given token name.
+	Looks up the active color for the given token name. Unknown names fall
+	back to the identifier color, so a custom lexer emitting kinds outside
+	the built in set still renders readably.
 ]]
 function Theme.getColor(tokenName: types.TokenName): Color3
-	return Theme.tokenColors[tokenName]
+	-- The map's indexer claims every read succeeds, so the annotation widens
+	-- the result back to optional for the fallback check.
+	local color: Color3? = Theme.tokenColors[tokenName]
+	if color == nil then
+		return Theme.tokenColors.iden
+	end
+	return color
 end
 
 --[[
@@ -95,18 +149,14 @@ function Theme.matchStudioSettings(refreshCallback: () -> ()): boolean
 		local studioTheme = studio.Theme
 
 		local function getTokens(): types.TokenColors
-			return {
-				["background"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptBackground),
-				["iden"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptText),
-				["keyword"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptKeyword),
-				["builtin"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptBuiltInFunction),
-				["type"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptLuauKeyword),
-				["string"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptString),
-				["number"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptNumber),
-				["comment"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptComment),
-				["operator"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptOperator),
-				["custom"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptBool),
-			}
+			-- The build table is keyed by string because the style map's
+			-- iteration widens its keys, and the double cast hands the
+			-- finished table back at the strict public type.
+			local tokens: { [string]: Color3 } = {}
+			for tokenName, style in studioStyleGuideColors do
+				tokens[tokenName] = studioTheme:GetColor(style)
+			end
+			return (tokens :: any) :: types.TokenColors
 		end
 
 		Theme.setColors(getTokens())

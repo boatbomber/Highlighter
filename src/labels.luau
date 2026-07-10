@@ -57,14 +57,10 @@ local function getTextBounds(textObject: types.TextObject, numLines: number): Ve
 end
 
 --[[
-	Gathers the info that is needed in order to set up a line label.
+	Gathers the info that is needed in order to set up a line label. The
+	caller passes the textObject's data in, so this always succeeds.
 ]]
-local function getLabelingInfo(textObject: types.TextObject): types.LabelingInfo?
-	local data = textObjectData[textObject]
-	if not data then
-		return nil
-	end
-
+local function getLabelingInfo(textObject: types.TextObject, data: types.ObjectData): types.LabelingInfo
 	-- One rich line builds per source line, so the cache length is the line
 	-- count and the alignment path never rescans the source. Empty sources
 	-- keep a floor of one line.
@@ -74,9 +70,6 @@ local function getLabelingInfo(textObject: types.TextObject): types.LabelingInfo
 	local textHeight = textBounds.Y / numLines
 
 	return {
-		data = data,
-		numLines = numLines,
-		textBounds = textBounds,
 		textHeight = textHeight,
 		innerAbsoluteSize = getInnerAbsoluteSize(textObject),
 		textColor = Theme.getColor("iden"),
@@ -100,20 +93,57 @@ local function getLabelPosition(labelingInfo: types.LabelingInfo, lineNumber: nu
 end
 
 --[[
-	Aligns and matches the line labels to the textObject.
+	Sizes and positions the line labels against the textObject's geometry.
+	Style properties stay untouched here because geometry events fire far
+	more often than the font, size, or theme actually changes.
 ]]
 local function alignLabels(textObject: types.TextObject)
-	local labelingInfo = getLabelingInfo(textObject)
-	if not labelingInfo then
+	local data = textObjectData[textObject]
+	if data == nil then
 		return
 	end
 
-	for lineNumber, lineLabel in labelingInfo.data.Labels do
+	local labelingInfo = getLabelingInfo(textObject, data)
+	for lineNumber, lineLabel in data.Labels do
+		lineLabel.Size = labelingInfo.labelSize
+		lineLabel.Position = getLabelPosition(labelingInfo, lineNumber)
+	end
+end
+
+--[[
+	Matches the line labels' color, font, and text size to the textObject and
+	the active theme. Label creation writes the same properties, so this only
+	needs to run when the font or text size changes and when the theme
+	refreshes.
+]]
+local function restyleLabels(textObject: types.TextObject)
+	local data = textObjectData[textObject]
+	if data == nil then
+		return
+	end
+
+	local labelingInfo = getLabelingInfo(textObject, data)
+	for _, lineLabel in data.Labels do
 		lineLabel.TextColor3 = labelingInfo.textColor
 		lineLabel.FontFace = labelingInfo.textFont
 		lineLabel.TextSize = labelingInfo.textSize
-		lineLabel.Size = labelingInfo.labelSize
-		lineLabel.Position = getLabelPosition(labelingInfo, lineNumber)
+	end
+end
+
+--[[
+	Blanks every label from firstLine onward and drops its cached rich line,
+	so the source can grow back into the labels later and a regrown line
+	always rebuilds instead of trusting a stale cache entry. Labels that are
+	already empty skip the write.
+]]
+local function blankLabelsFrom(data: types.ObjectData, firstLine: number)
+	local lineLabels = data.Labels
+	local richLines = data.RichLines
+	for l = firstLine, #lineLabels do
+		richLines[l] = nil
+		if lineLabels[l].Text ~= "" then
+			lineLabels[l].Text = ""
+		end
 	end
 end
 
@@ -157,22 +187,26 @@ local function populateLabels(props: types.HighlightProps)
 
 	-- Empty sources blank the existing labels and skip the lexer entirely.
 	if src == "" then
-		table.clear(richLines)
-		for l = 1, #lineLabels do
-			if lineLabels[l].Text == "" then
-				continue
-			end
-			lineLabels[l].Text = ""
-		end
+		blankLabelsFrom(data, 1)
 		return
 	end
 
-	local labelingInfo = getLabelingInfo(textObject)
-	if labelingInfo == nil then
-		-- Unreachable in practice since object data always exists by this point,
-		-- but it narrows the type for the label construction below.
-		return
+	-- The folder holding the line labels resolves once per populate rather
+	-- than once per label. When something outside the highlighter deleted it,
+	-- the old labels died with it and destroyed instances can never be
+	-- reparented, so the caches clear and every label rebuilds into a fresh
+	-- folder here.
+	local lineFolder = textObject:FindFirstChild("SyntaxHighlights")
+	if lineFolder == nil then
+		local newFolder = Instance.new("Folder")
+		newFolder.Name = "SyntaxHighlights"
+		newFolder.Parent = textObject
+		lineFolder = newFolder
+		table.clear(lineLabels)
+		table.clear(richLines)
 	end
+
+	local labelingInfo = getLabelingInfo(textObject, data)
 
 	--[[
 		Grabs the label for the given line, building and positioning a new one
@@ -198,7 +232,7 @@ local function populateLabels(props: types.HighlightProps)
 		newLabel.Size = labelingInfo.labelSize
 		newLabel.Position = getLabelPosition(labelingInfo, lineNumber)
 
-		newLabel.Parent = textObject:FindFirstChild("SyntaxHighlights")
+		newLabel.Parent = lineFolder
 		lineLabels[lineNumber] = newLabel
 		return newLabel
 	end
@@ -224,16 +258,9 @@ local function populateLabels(props: types.HighlightProps)
 		end,
 	})
 
-	-- Labels beyond the last source line are emptied rather than destroyed so
-	-- they can be reused when the source grows again, and their cached lines
-	-- clear with them so regrown sources rebuild from scratch.
-	for l = lastLine + 1, #lineLabels do
-		richLines[l] = nil
-		if lineLabels[l].Text == "" then
-			continue
-		end
-		lineLabels[l].Text = ""
-	end
+	-- Labels beyond the last source line are emptied rather than destroyed,
+	-- so they can be reused when the source grows again.
+	blankLabelsFrom(data, lastLine + 1)
 end
 
 --[[
@@ -266,18 +293,6 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 	writableTextObject.TextColor3 = Theme.getColor("iden")
 	writableTextObject.TextTransparency = 0.5
 
-	local lineFolder: Instance
-	local existingFolder = textObject:FindFirstChild("SyntaxHighlights")
-	if existingFolder ~= nil then
-		lineFolder = existingFolder
-	else
-		local newLineFolder = Instance.new("Folder")
-		newLineFolder.Name = "SyntaxHighlights"
-		newLineFolder.Parent = textObject
-
-		lineFolder = newLineFolder
-	end
-
 	local data: types.ObjectData = {
 		Text = "",
 		Labels = {},
@@ -287,10 +302,15 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 	}
 	textObjectData[textObject] = data
 
-	-- The cleanup handler releases everything this highlight created.
+	-- The cleanup handler releases everything this highlight created. The
+	-- label folder resolves here rather than capturing one, since populate
+	-- rebuilds the folder whenever it goes missing.
 	local connections: { [string]: RBXScriptConnection } = {}
 	local function cleanup()
-		lineFolder:Destroy()
+		local lineFolder = textObject:FindFirstChild("SyntaxHighlights")
+		if lineFolder ~= nil then
+			lineFolder:Destroy()
+		end
 
 		textObjectData[textObject] = nil
 		cleanups[textObject] = nil
@@ -325,7 +345,16 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 	connections["AbsoluteSizeChanged"] = textObject:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		alignLabels(textObject)
 	end)
+	-- A font or text size change restyles the labels and realigns them right
+	-- away with whatever bounds the engine currently reports. The bounds
+	-- recompute asynchronously, and their own connection realigns again once
+	-- the real values arrive.
 	connections["FontFaceChanged"] = textObject:GetPropertyChangedSignal("FontFace"):Connect(function()
+		restyleLabels(textObject)
+		alignLabels(textObject)
+	end)
+	connections["TextSizeChanged"] = textObject:GetPropertyChangedSignal("TextSize"):Connect(function()
+		restyleLabels(textObject)
 		alignLabels(textObject)
 	end)
 
@@ -341,12 +370,16 @@ end
 function Labels.refresh(): ()
 	for textObject, data in textObjectData do
 		-- The base object colors only write on the first highlight call, so
-		-- a theme change reapplies them here. Label colors realign inside
-		-- the highlight call below. The write goes through a narrowed alias
-		-- because Luau cannot assign through a union of instance types.
+		-- a theme change reapplies them here. The write goes through a
+		-- narrowed alias because Luau cannot assign through a union of
+		-- instance types.
 		local writableTextObject = textObject :: TextLabel
 		writableTextObject.BackgroundColor3 = Theme.getColor("background")
 		writableTextObject.TextColor3 = Theme.getColor("iden")
+
+		-- Untagged label text renders in the label's own color, so a theme
+		-- change has to restyle the labels too.
+		restyleLabels(textObject)
 
 		Labels.highlight({
 			textObject = textObject,
