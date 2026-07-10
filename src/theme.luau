@@ -13,16 +13,16 @@ local Theme = {
 	-- Keyed by string rather than TokenName because iterating
 	-- widens the keys, while the public getters stay strictly typed.
 	tokenColors = {
-		["background"] = Color3.fromRGB(47, 47, 47),
-		["iden"] = Color3.fromRGB(234, 234, 234),
-		["keyword"] = Color3.fromRGB(215, 174, 255),
-		["builtin"] = Color3.fromRGB(131, 206, 255),
-		["type"] = Color3.fromRGB(77, 227, 169),
-		["string"] = Color3.fromRGB(196, 255, 193),
-		["number"] = Color3.fromRGB(255, 125, 125),
-		["comment"] = Color3.fromRGB(140, 140, 155),
-		["operator"] = Color3.fromRGB(255, 239, 148),
-		["custom"] = Color3.fromRGB(119, 122, 255),
+		["background"] = Color3.fromRGB(30, 32, 37),
+		["iden"] = Color3.fromRGB(210, 211, 220),
+		["keyword"] = Color3.fromRGB(235, 121, 115),
+		["builtin"] = Color3.fromRGB(143, 180, 255),
+		["type"] = Color3.fromRGB(82, 139, 255),
+		["string"] = Color3.fromRGB(142, 233, 182),
+		["number"] = Color3.fromRGB(242, 186, 42),
+		["comment"] = Color3.fromRGB(106, 111, 129),
+		["operator"] = Color3.fromRGB(180, 186, 218),
+		["custom"] = Color3.fromRGB(158, 119, 255),
 	} :: { [string]: Color3 },
 }
 
