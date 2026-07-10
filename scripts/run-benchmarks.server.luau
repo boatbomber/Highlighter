@@ -9,7 +9,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Packages = ReplicatedStorage:WaitForChild("Packages")
 
-local Highlighter = require(Packages:WaitForChild("Highlighter"))
+local HighlighterModule = Packages:WaitForChild("Highlighter")
+local Highlighter = require(HighlighterModule)
+local RichText = require(HighlighterModule:WaitForChild("richtext"))
 local Lexer = Highlighter.defaultLexer
 
 local RUNS = 10
@@ -214,6 +216,81 @@ summarize(
 	end)
 )
 print("  the edit lands before every restart point, so this measures the full rescan fallback")
+
+--[[
+	Discards built lines so the line building benchmarks measure only the
+	token and string work.
+]]
+local function discardLine() end
+
+local rescanBuildBest = summarize(
+	"buildLines with a full rescan, tail edit",
+	measure(noSetup, function()
+		RichText.buildLines({
+			src = tailNew,
+			lexer = Lexer,
+			alwaysTagText = false,
+			onLine = discardLine,
+		})
+	end)
+)
+
+local hotswapBuildBest = summarize(
+	"buildLines over a hotswapped navigator, tail edit",
+	measure(scannedNavigator(tailOld), function(nav)
+		nav:HotswapSource(tailNew)
+		RichText.buildLines({
+			src = tailNew,
+			lexer = Lexer,
+			tokens = function()
+				return nav:Next()
+			end,
+			alwaysTagText = false,
+			onLine = discardLine,
+		})
+	end)
+)
+print(string.format("  %.1fx faster than the full rescan build", rescanBuildBest / hotswapBuildBest))
+
+local skipBuildBest = summarize(
+	"buildLines skipping lines the hotswap kept, tail edit",
+	measure(scannedNavigator(tailOld), function(nav)
+		-- This mirrors label population's keystroke path, walking the
+		-- newlines inside the reused bytes to find the first dirty line and
+		-- building only from there.
+		local reusedBytes = nav:HotswapSource(tailNew)
+		local startLine = 1
+		local buildFromByte = 1
+		local newlineAt = string.find(tailNew, "\n", 1, true)
+		while newlineAt ~= nil and newlineAt <= reusedBytes do
+			startLine += 1
+			buildFromByte = newlineAt + 1
+			newlineAt = string.find(tailNew, "\n", newlineAt + 1, true)
+		end
+		local trimHead = nav:SeekToByte(buildFromByte)
+		RichText.buildLines({
+			src = tailNew,
+			lexer = Lexer,
+			tokens = function()
+				local kind, content = nav:Next()
+				if trimHead > 0 and kind ~= nil then
+					content = string.sub(content, trimHead + 1)
+					trimHead = 0
+				end
+				return kind, content
+			end,
+			startLine = startLine,
+			alwaysTagText = false,
+			onLine = discardLine,
+		})
+	end)
+)
+print(
+	string.format(
+		"  this is label population's per keystroke path, %.1fx faster than the full rescan build",
+		rescanBuildBest / skipBuildBest
+	)
+)
 
 -- run-in-roblox can drop log output that is still queued when the place
 -- closes, so give it a moment to drain before returning.

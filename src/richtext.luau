@@ -22,6 +22,16 @@ local RichText = {}
 export type BuildLinesOptions = {
 	src: string,
 	lexer: types.Lexer,
+	-- An optional token iterator that stands in for scanning src, following
+	-- the same contract as the lexer's scan iterator. Label population feeds
+	-- one backed by its navigator cache so an edit skips rescanning tokens
+	-- the edit left untouched. The iterator must cover src exactly, from the
+	-- first byte of startLine when one is given.
+	tokens: (() -> (string?, string))?,
+	-- The line number the first emitted line takes, defaulting to one.
+	-- Callers that skip rebuilding a clean prefix pass the first dirty line
+	-- here along with a tokens iterator starting at that line's first byte.
+	startLine: number?,
 	customLang: { [string]: string }?,
 	alwaysTagText: boolean,
 	onLine: (lineNumber: number, richText: string) -> (),
@@ -65,13 +75,14 @@ function RichText.sanitize(text: string): string
 end
 
 --[[
-	Scans the source once and emits one rich text string per line through the
-	onLine callback. Every line builds, since a line's tokens can change from
-	edits on earlier lines alone, so callers that want to skip work compare
-	the built text against what they already have. When alwaysTagText is
-	false, text in the default identifier color skips its font tag since the
-	consuming label already renders that color. Returns the last line number
-	emitted.
+	Walks the source's tokens once and emits one rich text string per line
+	through the onLine callback, beginning at startLine when the options
+	carry one. A line's tokens can change from edits on earlier lines alone,
+	so every line from the start line on builds, and callers that want to
+	skip work compare the built text against what they already have. When
+	alwaysTagText is false, text in the default identifier color skips its
+	font tag since the consuming label already renders that color. Returns
+	the last line number emitted.
 ]]
 function RichText.buildLines(options: BuildLinesOptions): number
 	local customLang = options.customLang
@@ -102,7 +113,7 @@ function RichText.buildLines(options: BuildLinesOptions): number
 		return openTag
 	end
 
-	local richTextBuffer, bufferIndex, lineNumber = table.create(16), 0, 1
+	local richTextBuffer, bufferIndex, lineNumber = table.create(16), 0, options.startLine or 1
 
 	--[[
 		Appends one line piece of a token onto the current line's buffer.
@@ -168,10 +179,16 @@ function RichText.buildLines(options: BuildLinesOptions): number
 		end
 	end
 
-	-- The direct callback walk skips the iterator's coroutine round trip per
-	-- token, so it wins whenever the lexer offers it.
+	-- A caller-provided token iterator replaces scanning the source outright.
+	-- Otherwise the direct callback walk skips the iterator's coroutine round
+	-- trip per token, so it wins whenever the lexer offers it.
+	local tokens = options.tokens
 	local scanEach = options.lexer.scanEach
-	if scanEach ~= nil then
+	if tokens ~= nil then
+		for token, content in tokens do
+			handleToken(token, content)
+		end
+	elseif scanEach ~= nil then
 		scanEach(options.src, handleToken)
 	else
 		for token, content in options.lexer.scan(options.src) do

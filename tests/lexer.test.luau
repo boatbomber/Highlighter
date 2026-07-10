@@ -554,6 +554,34 @@ describe("navigator", function()
 		end
 		expect(table.concat(parts)).toBe("local x = 2 -- changed")
 	end)
+
+	it("seeks to the token containing a byte position", function()
+		local nav = lexer.navigator()
+		nav:SetSource("abc def ghi")
+		-- selene: allow(empty_loop)
+		while nav:Next() ~= nil do
+		end
+
+		-- The tokens are "abc ", "def ", and "ghi", so byte 5 starts the
+		-- second token exactly and byte 7 lands two bytes into it.
+		local trim = nav:SeekToByte(5)
+		expect(trim).toBe(0)
+		local kind, content = nav:Next()
+		expect(kind).toBe("iden")
+		expect(content).toBe("def ")
+
+		trim = nav:SeekToByte(7)
+		expect(trim).toBe(2)
+		kind, content = nav:Next()
+		expect(content).toBe("def ")
+		expect(string.sub(content, trim + 1)).toBe("f ")
+
+		trim = nav:SeekToByte(1)
+		expect(trim).toBe(0)
+		kind, content = nav:Next()
+		expect(kind).toBe("iden")
+		expect(content).toBe("abc ")
+	end)
 end)
 
 --[[
@@ -673,6 +701,29 @@ describe("hotswap reuse", function()
 	it("handles a shorter source that cuts a token in half", function()
 		local head = "local x = math.floor(1.5)\n"
 		expectHotswapMatchesFresh(head .. "local name = 123", head .. "local na")
+	end)
+
+	it("reports how many bytes of the source the kept tokens cover", function()
+		local body = string.rep("local x = math.floor(y) + 1\n", 30)
+		local nav = lexer.navigator()
+		nav:SetSource(body .. "print(1)")
+		-- selene: allow(empty_loop)
+		while nav:Next() ~= nil do
+		end
+
+		-- The edit only touches the digit, so the kept tokens reach into the
+		-- final line while stopping short of the changed byte at #body + 7.
+		local reused = nav:HotswapSource(body .. "print(2)")
+		expect(reused >= #body).toBe(true)
+		expect(reused <= #body + 6).toBe(true)
+
+		-- An identical swap covers everything and an unrelated source, which
+		-- falls back to a full rescan, covers nothing.
+		-- selene: allow(empty_loop)
+		while nav:Next() ~= nil do
+		end
+		expect(nav:HotswapSource(body .. "print(2)")).toBe(#body + 8)
+		expect(nav:HotswapSource("nothing shared at the front")).toBe(0)
 	end)
 
 	it("keeps everything when hotswapped to an identical source", function()

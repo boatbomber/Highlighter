@@ -40,7 +40,7 @@ export type BuildRichTextLinesProps = {
 export type Lexer = {
 	scan: (src: string, startIndex: number?) -> () -> (TokenName?, string),
 	scanEach: ((src: string, onToken: (TokenName, string) -> ()) -> ())?,
-	navigator: () -> any,
+	navigator: (() -> any)?,
 }
 
 export type LabelingInfo = {
@@ -58,6 +58,10 @@ export type ObjectData = {
 	RichLines: { string },
 	Lexer: Lexer?,
 	CustomLang: { [string]: string }?,
+	-- The token navigator serving this textObject's rebuilds, present when
+	-- the lexer offers a navigator factory. It stays any because the lexer
+	-- contract already erases the navigator's shape.
+	Navigator: any,
 }
 
 return nil

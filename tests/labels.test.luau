@@ -329,6 +329,231 @@ describe("automatic updates", function()
 	end)
 end)
 
+describe("incremental rescans", function()
+	local HighlighterPackage = Packages:WaitForChild("Highlighter")
+	local LexerModule = require(HighlighterPackage:WaitForChild("lexer"))
+	local NavigatorModule = require(HighlighterPackage:WaitForChild("lexer"):WaitForChild("navigator"))
+	local RichTextModule = require(HighlighterPackage:WaitForChild("richtext"))
+
+	--[[
+		Builds a lexer whose navigator records where every scan begins, which
+		lets a test tell a resumed scan from a full one. The returned list gets
+		one entry per scan the labels actually ran.
+	]]
+	local function makeSpyLexer()
+		local scanStarts: { number } = {}
+		local spyLexer = {
+			scan = LexerModule.scan,
+			scanEach = LexerModule.scanEach,
+			navigator = function()
+				return NavigatorModule.new(function(src: string, startIndex: number?, seed)
+					table.insert(scanStarts, startIndex or 1)
+					return LexerModule.scanRestartable(src, startIndex, seed)
+				end)
+			end,
+		}
+		return spyLexer, scanStarts
+	end
+
+	it("resumes the scan mid source when text is edited at the end", function()
+		local body = "local a = 1\nlocal b = 2\nlocal c = 3\n"
+		local textObject = makeTextObject(body .. "print(1)")
+		local spyLexer, scanStarts = makeSpyLexer()
+		Highlighter.highlight({ textObject = textObject, lexer = spyLexer })
+
+		expect(#scanStarts).toBe(1)
+		expect(scanStarts[1]).toBe(1)
+
+		textObject.Text = body .. "print(2)"
+
+		-- The changed digit sits alone between its font tags, so ">2<" only
+		-- appears once the last line rebuilds from the new source.
+		local updated = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[4]
+			return lineLabel ~= nil and string.find(lineLabel.Text, ">2<", 1, true) ~= nil
+		end)
+		expect(updated).toBe(true)
+
+		expect(#scanStarts).toBe(2)
+		expect(scanStarts[2] > 1).toBe(true)
+	end)
+
+	it("drains cached tokens with no rescan when only customLang changes", function()
+		local textObject = makeTextObject("myFunc(1)")
+		local spyLexer, scanStarts = makeSpyLexer()
+		Highlighter.highlight({ textObject = textObject, lexer = spyLexer })
+
+		expect(#scanStarts).toBe(1)
+
+		Highlighter.highlight({
+			textObject = textObject,
+			lexer = spyLexer,
+			customLang = { myFunc = "custom" },
+		})
+
+		local customHex = Highlighter.getTokenColor("custom"):ToHex()
+		expect(string.find(getLineLabels(textObject)[1].Text, customHex, 1, true) ~= nil).toBe(true)
+		expect(#scanStarts).toBe(1)
+	end)
+
+	it("skips rebuilding lines the edit provably left alone", function()
+		local body = "local alpha = 1\nlocal beta = 2\nlocal gamma = 3\n"
+		local textObject = makeTextObject(body .. "print(1)")
+		Highlighter.highlight({ textObject = textObject })
+
+		-- Wrapping sanitize records which token contents pass through the
+		-- builder, since buildLines reads it through the module table on
+		-- every call.
+		local realSanitize = RichTextModule.sanitize
+		local sanitized: { string } = {}
+		RichTextModule.sanitize = function(text: string): string
+			table.insert(sanitized, text)
+			return realSanitize(text)
+		end
+
+		textObject.Text = body .. "print(2)"
+		local updated = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[4]
+			return lineLabel ~= nil and string.find(lineLabel.Text, ">2<", 1, true) ~= nil
+		end)
+		RichTextModule.sanitize = realSanitize
+		expect(updated).toBe(true)
+
+		-- The rebuild reaches back at most into the edited line, so the
+		-- early lines' contents never pass through the builder again.
+		local sawEarlyLine = false
+		for _, text in sanitized do
+			if string.find(text, "alpha", 1, true) or string.find(text, "beta", 1, true) then
+				sawEarlyLine = true
+			end
+		end
+		expect(sawEarlyLine).toBe(false)
+	end)
+
+	it("recolors every line on refresh after a skipped rebuild", function()
+		local savedKeyword = Highlighter.getTokenColor("keyword")
+		local textObject = makeTextObject("local a = 1\nprint(1)")
+		Highlighter.highlight({ textObject = textObject })
+
+		-- The tail edit rebuilds only the last line, and the theme change
+		-- afterward has to reach the skipped first line anyway.
+		textObject.Text = "local a = 1\nprint(2)"
+		local edited = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[2]
+			return lineLabel ~= nil and string.find(lineLabel.Text, ">2<", 1, true) ~= nil
+		end)
+		expect(edited).toBe(true)
+
+		local newColor = Color3.fromRGB(210, 20, 20)
+		Highlighter.setTokenColors({ keyword = newColor })
+		local recolored = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[1]
+			return lineLabel ~= nil and string.find(lineLabel.Text, newColor:ToHex(), 1, true) ~= nil
+		end)
+		Highlighter.setTokenColors({ keyword = savedKeyword })
+		expect(recolored).toBe(true)
+	end)
+
+	it("rebuilds skipped lines into a healed folder", function()
+		local textObject = makeTextObject("local a = 1\nprint(1)")
+		Highlighter.highlight({ textObject = textObject })
+
+		local folder = textObject:FindFirstChild("SyntaxHighlights") :: Instance
+		folder:Destroy()
+
+		-- The tail edit alone would leave line one untouched, but the folder
+		-- loss means every label has to rebuild from scratch.
+		textObject.Text = "local a = 1\nprint(2)"
+
+		local keywordHex = Highlighter.getTokenColor("keyword"):ToHex()
+		local healed = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[1]
+			return lineLabel ~= nil and string.find(lineLabel.Text, keywordHex, 1, true) ~= nil
+		end)
+		expect(healed).toBe(true)
+	end)
+
+	it("refills lines blanked by an empty source", function()
+		local textObject = makeTextObject("local a = 1\nprint(1)")
+		Highlighter.highlight({ textObject = textObject })
+
+		local firstLabel = getLineLabels(textObject)[1]
+		textObject.Text = ""
+		local blanked = waitUntil(function()
+			return firstLabel.Text == ""
+		end)
+		expect(blanked).toBe(true)
+
+		-- Text sharing a prefix with the pre blank source must not let the
+		-- navigator's stale cache vouch for labels that are now empty.
+		textObject.Text = "local a = 1\nprint(3)"
+		local refilled = waitUntil(function()
+			return firstLabel.Text ~= ""
+		end)
+		expect(refilled).toBe(true)
+	end)
+
+	it("matches a full rescan when the dirty line starts inside a token", function()
+		-- The long string's token carries the following line's indentation,
+		-- so the edited line starts partway through a kept token and the
+		-- rebuild has to trim the head off it.
+		local head = "do\n    local a = [[one\ntwo]]\n"
+		local oldSource = head .. "    print(1)\nend"
+		local newSource = head .. "    print(2)\nend"
+		local textObject = makeTextObject(oldSource)
+		Highlighter.highlight({ textObject = textObject })
+		textObject.Text = newSource
+
+		local reference = makeTextObject(newSource)
+		Highlighter.highlight({
+			textObject = reference,
+			lexer = { scan = LexerModule.scan, scanEach = LexerModule.scanEach },
+		})
+		local referenceLabels = getLineLabels(reference)
+
+		local matched = waitUntil(function()
+			local labels = getLineLabels(textObject)
+			for lineNumber, referenceLabel in referenceLabels do
+				local lineLabel = labels[lineNumber]
+				if lineLabel == nil or lineLabel.Text ~= referenceLabel.Text then
+					return false
+				end
+			end
+			return true
+		end)
+		expect(matched).toBe(true)
+	end)
+
+	it("produces the same labels as a full rescan after an end edit", function()
+		local oldSource = "local a = 1\nprint(`{a} items`)\nreturn a"
+		local newSource = "local a = 1\nprint(`{a} items`)\nreturn a + 1"
+		local textObject = makeTextObject(oldSource)
+		Highlighter.highlight({ textObject = textObject })
+		textObject.Text = newSource
+
+		-- A lexer with no navigator factory keeps the full-rescan path, which
+		-- makes this second object the ground truth to compare against.
+		local reference = makeTextObject(newSource)
+		Highlighter.highlight({
+			textObject = reference,
+			lexer = { scan = LexerModule.scan, scanEach = LexerModule.scanEach },
+		})
+		local referenceLabels = getLineLabels(reference)
+
+		local matched = waitUntil(function()
+			local labels = getLineLabels(textObject)
+			for lineNumber, referenceLabel in referenceLabels do
+				local lineLabel = labels[lineNumber]
+				if lineLabel == nil or lineLabel.Text ~= referenceLabel.Text then
+					return false
+				end
+			end
+			return true
+		end)
+		expect(matched).toBe(true)
+	end)
+end)
+
 describe("cleanup", function()
 	it("removes labels and stops updating", function()
 		local textObject = makeTextObject("local x = 1")

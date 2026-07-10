@@ -67,6 +67,8 @@ Highlighter.defaultLexer: Lexer
 
 The built-in Luau lexer, used whenever props don't provide one.
 Its scanning flow is documented in [docs/lexer.md](docs/lexer.md).
+Its `navigator` factory is what lets `highlight` reuse cached tokens across edits, so typing near the end of a source only rescans and rebuilds the tail lines.
+A custom lexer without one still works and pays a full scan per update.
 
 ### Types
 
@@ -106,7 +108,7 @@ type BuildRichTextLinesProps = {
 type Lexer = {
     scan: (src: string, startIndex: number?) -> () -> (TokenName?, string),
     scanEach: ((src: string, onToken: (TokenName, string) -> ()) -> ())?,
-    navigator: () -> any,
+    navigator: (() -> any)?,
 }
 ```
 

@@ -137,12 +137,15 @@ function Navigator.new(scan: ScanFunction)
 	--[[
 		Swaps in an edited source while keeping every cached token the edit
 		provably left untouched, resuming the scan from the latest restart
-		snapshot inside the shared prefix.
+		snapshot inside the shared prefix. Returns how many leading bytes of
+		the new source the kept tokens cover, which is the prefix whose
+		tokenization provably matches the previous source. An identical swap
+		reports the whole source and the full rescan fallback reports zero.
 	]]
-	function nav.HotswapSource(_self: any, sourceString: string)
+	function nav.HotswapSource(_self: any, sourceString: string): number
 		if sourceString == nav.Source then
 			nav.userIndex = 0
-			return
+			return #sourceString
 		end
 
 		-- A cached token stays valid for the new source when everything the
@@ -167,7 +170,7 @@ function Navigator.new(scan: ScanFunction)
 
 		if restartToken == 0 then
 			nav:SetSource(sourceString)
-			return
+			return 0
 		end
 
 		for stale = nav.realIndex, restartToken + 1, -1 do
@@ -191,6 +194,33 @@ function Navigator.new(scan: ScanFunction)
 			previous3 = if secondPreviousEntry ~= nil then secondPreviousEntry[2] else "",
 		}
 		nav.scanThread = buildScanThread(nav.endOffsets[restartToken] + 1, seed)
+		return nav.endOffsets[restartToken]
+	end
+
+	--[[
+		Moves the read position so the next Next returns the token containing
+		the given byte, and returns how many bytes of that token sit before
+		the byte so the caller can trim them off the first read. The position
+		must lie inside the scanned bytes or exactly one past them, where the
+		next read simply resumes the scan. Peeks keep returning whole tokens,
+		since the trim is the caller's to apply.
+	]]
+	function nav.SeekToByte(_self: any, position: number): number
+		-- A binary search over the cumulative end offsets finds the last
+		-- token that ends before the position.
+		local low, high = 1, nav.realIndex
+		local before = 0
+		while low <= high do
+			local mid = math.floor((low + high) / 2)
+			if nav.endOffsets[mid] < position then
+				before = mid
+				low = mid + 1
+			else
+				high = mid - 1
+			end
+		end
+		nav.userIndex = before
+		return position - 1 - (nav.endOffsets[before] or 0)
 	end
 
 	--[[

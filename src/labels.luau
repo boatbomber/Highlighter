@@ -182,14 +182,39 @@ local function populateLabels(props: types.HighlightProps)
 	local richLines = data.RichLines
 
 	data.Text = src
+
+	-- The navigator's token cache belongs to the lexer that filled it, so a
+	-- lexer change tears the navigator down and builds a fresh one from the
+	-- new lexer's factory before anything reads stale tokens.
+	if lexer ~= data.Lexer then
+		if data.Navigator ~= nil then
+			data.Navigator:Destroy()
+		end
+		data.Navigator = nil
+		local navigatorFactory = lexer.navigator
+		if navigatorFactory ~= nil then
+			data.Navigator = navigatorFactory()
+		end
+	end
+
 	data.Lexer = lexer
 	data.CustomLang = customLang
 
 	-- Empty sources blank the existing labels and skip the lexer entirely.
+	-- The navigator resets too, since the blanked labels no longer reflect
+	-- its cached tokens and a later edit must not skip lines on their word.
 	if src == "" then
+		if data.Navigator ~= nil then
+			data.Navigator:SetSource("")
+		end
 		blankLabelsFrom(data, 1)
 		return
 	end
+
+	-- Skipping clean line rebuilds is only sound while the existing labels
+	-- are trusted, so force updates rebuild every line and a healed folder
+	-- does too, since its labels start out blank.
+	local canSkipLines = not forceUpdate
 
 	-- The folder holding the line labels resolves once per populate rather
 	-- than once per label. When something outside the highlighter deleted it,
@@ -204,6 +229,7 @@ local function populateLabels(props: types.HighlightProps)
 		lineFolder = newFolder
 		table.clear(lineLabels)
 		table.clear(richLines)
+		canSkipLines = false
 	end
 
 	local labelingInfo = getLabelingInfo(textObject, data)
@@ -237,9 +263,49 @@ local function populateLabels(props: types.HighlightProps)
 		return newLabel
 	end
 
+	-- Reading tokens through the navigator lets an edit reuse every cached
+	-- token the scanner proves untouched, so a keystroke near the end of the
+	-- source only pays to rescan the tail. Hotswapping an unchanged source
+	-- keeps the whole cache, which is what force updates from theme and
+	-- customLang changes drain.
+	local navigator = data.Navigator
+	local tokens: (() -> (string?, string))? = nil
+	local startLine = 1
+	if navigator ~= nil then
+		local reusedBytes: number = navigator:HotswapSource(src)
+
+		-- Every line that ends inside the reused bytes rebuilds byte
+		-- identical to what its label already shows, so the build starts at
+		-- the first line the edit could have changed.
+		local buildFromByte = 1
+		if canSkipLines then
+			local newlineAt = string.find(src, "\n", 1, true)
+			while newlineAt ~= nil and newlineAt <= reusedBytes do
+				startLine += 1
+				buildFromByte = newlineAt + 1
+				newlineAt = string.find(src, "\n", newlineAt + 1, true)
+			end
+		end
+
+		-- The first read comes back from the cache as a whole token, so any
+		-- head bytes belonging to already skipped lines trim off before the
+		-- builder sees it.
+		local trimHead: number = navigator:SeekToByte(buildFromByte)
+		tokens = function(): (string?, string)
+			local kind, content = navigator:Next()
+			if trimHead > 0 and kind ~= nil then
+				content = string.sub(content, trimHead + 1)
+				trimHead = 0
+			end
+			return kind, content
+		end
+	end
+
 	local lastLine = RichText.buildLines({
 		src = src,
 		lexer = lexer,
+		tokens = tokens,
+		startLine = startLine,
 		customLang = customLang,
 		alwaysTagText = false,
 		onLine = function(lineNumber: number, richText: string)
@@ -293,12 +359,22 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 	writableTextObject.TextColor3 = Theme.getColor("iden")
 	writableTextObject.TextTransparency = 0.5
 
+	-- A lexer that offers a navigator factory gets one navigator per tracked
+	-- textObject, which is what lets populate reuse cached tokens across
+	-- edits instead of rescanning the whole source.
+	local navigator: any = nil
+	local navigatorFactory = lexer.navigator
+	if navigatorFactory ~= nil then
+		navigator = navigatorFactory()
+	end
+
 	local data: types.ObjectData = {
 		Text = "",
 		Labels = {},
 		RichLines = {},
 		Lexer = lexer,
 		CustomLang = customLang,
+		Navigator = navigator,
 	}
 	textObjectData[textObject] = data
 
@@ -310,6 +386,13 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 		local lineFolder = textObject:FindFirstChild("SyntaxHighlights")
 		if lineFolder ~= nil then
 			lineFolder:Destroy()
+		end
+
+		-- The navigator reads back through data since populate rebuilds it
+		-- whenever the lexer changes.
+		if data.Navigator ~= nil then
+			data.Navigator:Destroy()
+			data.Navigator = nil
 		end
 
 		textObjectData[textObject] = nil
