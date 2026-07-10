@@ -195,7 +195,16 @@ end
 function RichText.buildRichTextLines(props: types.BuildRichTextLinesProps): { string }
 	local src = RichText.normalize(props.src)
 
-	local richTextLines = table.create(select(2, string.gsub(src, "\n", "\n")) + 1) :: { string }
+	-- Counting newlines through plain finds sizes the array without gsub
+	-- building a full copy of the source just to report its match count.
+	local lineCount = 1
+	local newlineAt = string.find(src, "\n", 1, true)
+	while newlineAt ~= nil do
+		lineCount += 1
+		newlineAt = string.find(src, "\n", newlineAt + 1, true)
+	end
+
+	local richTextLines = table.create(lineCount) :: { string }
 
 	RichText.buildLines({
 		src = src,

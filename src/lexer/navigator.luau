@@ -10,14 +10,13 @@
 ]]
 
 -- The scanner state a resumed scan needs beyond its start position. The
--- depth comes from a restart snapshot and the previous token fields come
+-- depth comes from a restart snapshot and the previous token contents come
 -- back out of the token cache.
 export type ScanSeed = {
 	depth: number,
 	previous1: string,
 	previous2: string,
 	previous3: string,
-	previousKind: string,
 }
 
 type ScanFunction = (src: string, startIndex: number?, seed: ScanSeed?) -> () -> (string?, string, number?, number?)
@@ -170,7 +169,6 @@ function Navigator.new(scan: ScanFunction)
 		local secondPreviousEntry = cache[restartToken - 2]
 		local seed: ScanSeed = {
 			depth = nav.restartDepths[restartToken] :: number,
-			previousKind = restartEntry[1],
 			previous1 = restartEntry[2],
 			previous2 = if previousEntry ~= nil then previousEntry[2] else "",
 			previous3 = if secondPreviousEntry ~= nil then secondPreviousEntry[2] else "",

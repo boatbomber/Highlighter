@@ -36,13 +36,27 @@ local BYTE_BACKTICK = constants.BYTE_BACKTICK
 local BYTE_BACKSLASH = constants.BYTE_BACKSLASH
 local BYTE_DASH = constants.BYTE_DASH
 local BYTE_PLUS = constants.BYTE_PLUS
+local BYTE_STAR = constants.BYTE_STAR
+local BYTE_SLASH = constants.BYTE_SLASH
+local BYTE_PERCENT = constants.BYTE_PERCENT
+local BYTE_CARET = constants.BYTE_CARET
+local BYTE_HASH = constants.BYTE_HASH
+local BYTE_TILDE = constants.BYTE_TILDE
 local BYTE_DOT = constants.BYTE_DOT
+local BYTE_COMMA = constants.BYTE_COMMA
+local BYTE_COLON = constants.BYTE_COLON
+local BYTE_SEMICOLON = constants.BYTE_SEMICOLON
+local BYTE_QUESTION = constants.BYTE_QUESTION
+local BYTE_PIPE = constants.BYTE_PIPE
+local BYTE_AMPERSAND = constants.BYTE_AMPERSAND
 local BYTE_UNDERSCORE = constants.BYTE_UNDERSCORE
 local BYTE_EQUALS = constants.BYTE_EQUALS
 local BYTE_OPEN_PAREN = constants.BYTE_OPEN_PAREN
+local BYTE_CLOSE_PAREN = constants.BYTE_CLOSE_PAREN
 local BYTE_OPEN_BRACE = constants.BYTE_OPEN_BRACE
 local BYTE_CLOSE_BRACE = constants.BYTE_CLOSE_BRACE
 local BYTE_OPEN_BRACKET = constants.BYTE_OPEN_BRACKET
+local BYTE_CLOSE_BRACKET = constants.BYTE_CLOSE_BRACKET
 local BYTE_LESS_THAN = constants.BYTE_LESS_THAN
 local BYTE_GREATER_THAN = constants.BYTE_GREATER_THAN
 local BYTE_AT = constants.BYTE_AT
@@ -55,11 +69,6 @@ local IS_DIGIT = constants.IS_DIGIT
 local IS_IDEN_START = constants.IS_IDEN_START
 local IS_IDEN_CHAR = constants.IS_IDEN_CHAR
 local IS_NUMBER_TAIL = constants.IS_NUMBER_TAIL
-local THREE_CHAR_OPERATORS = constants.THREE_CHAR_OPERATORS
-local TWO_CHAR_OPERATORS = constants.TWO_CHAR_OPERATORS
-local SINGLE_CHAR_OPERATORS = constants.SINGLE_CHAR_OPERATORS
-local TYPE_CONTINUERS = constants.TYPE_CONTINUERS
-local TYPE_EXPRESSION_KEYWORDS = constants.TYPE_EXPRESSION_KEYWORDS
 
 --[[
 	Scans one source string, calling yield(kind, content) for every token.
@@ -85,24 +94,27 @@ local function scanSource(
 	local queuedText = ""
 	local pendingPrefix = ""
 
-	-- The last three emitted token texts and the last kind feed the library
-	-- member heuristic, mirroring how members are detected for things like
-	-- math.floor without misreading foo.floor.
-	local previous1, previous2, previous3, previousKind = "", "", "", ""
+	-- The last three emitted token lexemes feed the library member heuristic,
+	-- mirroring how members are detected for things like math.floor without
+	-- misreading foo.floor. They hold exact lexemes with no whitespace, which
+	-- lets the heuristic compare interned strings instead of running pattern
+	-- matches on the identifier hot path.
+	local previous1, previous2, previous3 = "", "", ""
 
 	-- Bracket depth across parens, braces, and square brackets in code, and
 	-- the depths at which interpolation holes opened.
 	local depth = 0
 	local holeStack = {}
 
-	-- A resumed scan restores the depth and previous token texts it would
-	-- have had at this point in a full scan. The seeded texts include merged
-	-- trailing whitespace while a full scan's do not, but every read of them
-	-- strips or tolerates whitespace, so classification comes out the same.
+	-- A resumed scan restores the depth and previous token lexemes it would
+	-- have had at this point in a full scan. Cached token contents carry
+	-- merged whitespace, so they strip once here to restore the exact lexeme
+	-- invariant the heuristic relies on.
 	if seed ~= nil then
 		depth = seed.depth
-		previousKind = seed.previousKind
-		previous1, previous2, previous3 = seed.previous1, seed.previous2, seed.previous3
+		previous1 = (string.gsub(seed.previous1, "[%c%s]+", ""))
+		previous2 = (string.gsub(seed.previous2, "[%c%s]+", ""))
+		previous3 = (string.gsub(seed.previous3, "[%c%s]+", ""))
 	end
 
 	-- The furthest byte position any lookahead has read. Restart snapshots
@@ -146,12 +158,13 @@ local function scanSource(
 
 	local function emit(kind: string, text: string)
 		flushQueued()
+		-- The lexeme records before the prefix joins it, so the previous
+		-- token texts stay whitespace free even at the start of the source.
+		previous3, previous2, previous1 = previous2, previous1, text
 		if pendingPrefix ~= "" then
 			text = pendingPrefix .. text
 			pendingPrefix = ""
 		end
-		previous3, previous2, previous1 = previous2, previous1, text
-		previousKind = kind
 		queuedKind, queuedText = kind, text
 	end
 
@@ -326,7 +339,10 @@ local function scanSource(
 					typeofArmed = true
 					return
 				end
-				if not TYPE_EXPRESSION_KEYWORDS[text] then
+				-- nil, true, and false are singleton types, so they stay
+				-- legal inside a type expression while any other keyword
+				-- ends the context.
+				if text ~= "nil" and text ~= "true" and text ~= "false" then
 					exitTypeMode()
 				end
 			elseif text == "type" and isAliasHead() then
@@ -346,14 +362,13 @@ local function scanSource(
 			return
 		end
 
-		if string.find(previous1, "%.[%s%c]*$") ~= nil and previousKind ~= "comment" then
-			local parent = string.gsub(previous2, "[%c%s]+", "")
-			local libraryMembers = libraries[parent]
-			if
-				libraryMembers ~= nil
-				and libraryMembers[text] ~= nil
-				and string.find(previous3, "%.[%s%c]*$") == nil
-			then
+		-- A library member sits directly after a member access dot whose left
+		-- side is a known library that is not itself a member access, which
+		-- keeps foo.math.floor plain. The previous lexemes are exact interned
+		-- strings, so equality against the dot operator is all this costs.
+		if previous1 == "." and previous3 ~= "." then
+			local libraryMembers = libraries[previous2]
+			if libraryMembers ~= nil and libraryMembers[text] ~= nil then
 				emit("builtin", text)
 				return
 			end
@@ -398,26 +413,41 @@ local function scanSource(
 
 	--[[
 		Advances past a backslash escape inside a string, mirroring Luau's
-		readBackslashInString. An escaped carriage return also takes the line
-		feed after it, and a z escape swallows all following whitespace
-		including line breaks so the string continues on the next line.
+		readBackslashInString, and returns whether it consumed a line feed so
+		string scanners can track line breaks without rescanning their text.
+		An escaped carriage return also takes the line feed after it, and a z
+		escape swallows all following whitespace including line breaks so the
+		string continues on the next line.
 	]]
-	local function skipEscape()
+	local function skipEscape(): boolean
 		local escapeByte = string.byte(source, index + 1)
 		if escapeByte == nil then
 			index += 1
+			return false
 		elseif escapeByte == BYTE_RETURN then
 			index += 2
 			if string.byte(source, index) == BYTE_NEWLINE then
 				index += 1
+				return true
 			end
+			return false
 		elseif escapeByte == BYTE_LOWER_Z then
 			index += 2
-			while index <= size and IS_SPACE[string.byte(source, index)] do
+			local sawNewline = false
+			while index <= size do
+				local spaceByte = string.byte(source, index)
+				if not IS_SPACE[spaceByte] then
+					break
+				end
+				if spaceByte == BYTE_NEWLINE then
+					sawNewline = true
+				end
 				index += 1
 			end
+			return sawNewline
 		else
 			index += 2
+			return escapeByte == BYTE_NEWLINE
 		end
 	end
 
@@ -431,21 +461,26 @@ local function scanSource(
 		typeofArmed = false
 		typeContinues = false
 		local start = index
+		local sawNewline = false
 		index += 1
 		while index <= size do
 			local byte = string.byte(source, index)
 			if byte == BYTE_BACKSLASH then
-				skipEscape()
+				if skipEscape() then
+					sawNewline = true
+				end
 			elseif byte == quoteByte or byte == BYTE_NEWLINE or byte == BYTE_RETURN then
+				if byte == BYTE_NEWLINE then
+					sawNewline = true
+				end
 				index += 1
 				break
 			else
 				index += 1
 			end
 		end
-		local text = string.sub(source, start, index - 1)
-		emit("string", text)
-		if string.find(text, "\n", 1, true) ~= nil then
+		emit("string", string.sub(source, start, index - 1))
+		if sawNewline then
 			checkTypeNewline()
 		end
 	end
@@ -519,9 +554,10 @@ local function scanSource(
 		else
 			index = size + 1
 		end
-		local text = string.sub(source, start, index - 1)
-		emit("comment", text)
-		if string.find(text, "\n", 1, true) ~= nil then
+		emit("comment", string.sub(source, start, index - 1))
+		-- The terminator search already answers whether the comment carried
+		-- its newline, so no rescan of the text is needed.
+		if newlineAt ~= nil then
 			checkTypeNewline()
 		end
 	end
@@ -531,12 +567,12 @@ local function scanSource(
 		index, ending the type context when the piece carried a line break the
 		way every other string and comment scanner does. A piece can hold a
 		line break as the bare one that terminated an unfinished string or
-		through an escape like a backslash z.
+		through an escape like a backslash z, and the scanners that consume
+		those bytes report the flag rather than rescanning the text.
 	]]
-	local function emitInterpPiece(start: number)
-		local text = string.sub(source, start, index - 1)
-		emit("string", text)
-		if string.find(text, "\n", 1, true) ~= nil then
+	local function emitInterpPiece(start: number, sawNewline: boolean)
+		emit("string", string.sub(source, start, index - 1))
+		if sawNewline then
 			checkTypeNewline()
 		end
 	end
@@ -551,6 +587,7 @@ local function scanSource(
 		typeofArmed = false
 		typeContinues = false
 		local start = index
+		local sawNewline = false
 		index += 1
 		while index <= size do
 			local byte = string.byte(source, index)
@@ -562,35 +599,43 @@ local function scanSource(
 					and string.byte(source, index + 2) == BYTE_OPEN_BRACE
 				then
 					index += 3
-				else
-					skipEscape()
+				elseif skipEscape() then
+					sawNewline = true
 				end
 			elseif byte == BYTE_BACKTICK or byte == BYTE_NEWLINE or byte == BYTE_RETURN then
+				if byte == BYTE_NEWLINE then
+					sawNewline = true
+				end
 				index += 1
-				emitInterpPiece(start)
+				emitInterpPiece(start, sawNewline)
 				return nil
 			elseif byte == BYTE_OPEN_BRACE then
 				index += 1
-				emitInterpPiece(start)
+				emitInterpPiece(start, sawNewline)
 				return "hole"
 			else
 				index += 1
 			end
 		end
-		emitInterpPiece(start)
+		emitInterpPiece(start, sawNewline)
 		return nil
 	end
 
 	--[[
 		Applies an operator's side effects: bracket depth, interpolation
-		hole tracking, and the type context's entries and exits.
+		hole tracking, and the type context's entries and exits. Each branch
+		also records whether the operator lets a type context survive a line
+		break, like a trailing union bar before a wrapped union member, since
+		the chain is already comparing against every lexeme that does.
 	]]
 	local function handleOperator(operator: string)
+		local continues = false
 		if operator == "(" or operator == "{" or operator == "[" then
 			depth += 1
 			if operator == "(" and typeofArmed then
 				typeofDepth = depth
 			end
+			continues = true
 		elseif operator == ")" or operator == "}" or operator == "]" then
 			if typeMode and depth <= typeEntryDepth then
 				exitTypeMode()
@@ -601,14 +646,17 @@ local function scanSource(
 			end
 		elseif operator == "::" then
 			enterTypeMode()
+			continues = true
 		elseif operator == "->" then
 			if not typeMode then
 				enterTypeMode()
 			end
+			continues = true
 		elseif operator == ":" then
 			if not typeMode and isAnnotationColon() then
 				enterTypeMode()
 			end
+			continues = true
 		elseif operator == "=" then
 			if typeMode and depth <= typeEntryDepth and typeAngle == 0 then
 				if aliasAwaitEquals then
@@ -617,21 +665,26 @@ local function scanSource(
 					exitTypeMode()
 				end
 			end
+			continues = true
 		elseif operator == "," or operator == ";" then
 			if typeMode and depth <= typeEntryDepth and typeAngle == 0 then
 				exitTypeMode()
 			end
+			continues = operator == ","
 		elseif operator == "<" then
 			if typeMode then
 				typeAngle += 1
 			end
+			continues = true
 		elseif operator == ">" then
 			if typeMode and typeAngle > 0 then
 				typeAngle -= 1
 			end
+		elseif operator == "|" or operator == "&" or operator == "." then
+			continues = true
 		end
 		typeofArmed = false
-		typeContinues = TYPE_CONTINUERS[operator] == true
+		typeContinues = continues
 	end
 
 	--[[
@@ -657,34 +710,92 @@ local function scanSource(
 	end
 
 	--[[
-		Scans an operator, longest lexeme first. Bytes that are not part of
-		any operator become single-character iden tokens so the stream
-		still covers them.
+		Scans an operator by dispatching on its first byte, checking longer
+		lexemes before their prefixes so ..= wins over .. and a lone dot.
+		Every emitted lexeme is an interned literal and the chain is ordered
+		roughly by how often each family appears in real code, which keeps
+		this path free of substring allocations and table lookups. Bytes that
+		are not part of any operator become single-character iden tokens so
+		the stream still covers them. The at sign never arrives here because
+		the dispatcher sends it to the attribute path first, and neither do
+		two dashes, which go to the comment scanner.
 	]]
 	local function scanOperator()
-		local three = string.sub(source, index, index + 2)
-		if THREE_CHAR_OPERATORS[three] then
-			index += 3
-			emit("operator", three)
-			handleOperator(three)
-			return
+		local byte = string.byte(source, index)
+		local nextByte = string.byte(source, index + 1)
+		local operator: string? = nil
+
+		if byte == BYTE_OPEN_PAREN then
+			operator = "("
+		elseif byte == BYTE_CLOSE_PAREN then
+			operator = ")"
+		elseif byte == BYTE_EQUALS then
+			operator = if nextByte == BYTE_EQUALS then "==" else "="
+		elseif byte == BYTE_DOT then
+			if nextByte == BYTE_DOT then
+				local thirdByte = string.byte(source, index + 2)
+				operator = if thirdByte == BYTE_EQUALS then "..=" elseif thirdByte == BYTE_DOT then "..." else ".."
+			else
+				operator = "."
+			end
+		elseif byte == BYTE_COMMA then
+			operator = ","
+		elseif byte == BYTE_COLON then
+			operator = if nextByte == BYTE_COLON then "::" else ":"
+		elseif byte == BYTE_OPEN_BRACE then
+			operator = "{"
+		elseif byte == BYTE_CLOSE_BRACE then
+			operator = "}"
+		elseif byte == BYTE_OPEN_BRACKET then
+			operator = "["
+		elseif byte == BYTE_CLOSE_BRACKET then
+			operator = "]"
+		elseif byte == BYTE_DASH then
+			operator = if nextByte == BYTE_GREATER_THAN then "->" elseif nextByte == BYTE_EQUALS then "-=" else "-"
+		elseif byte == BYTE_PLUS then
+			operator = if nextByte == BYTE_EQUALS then "+=" else "+"
+		elseif byte == BYTE_STAR then
+			operator = if nextByte == BYTE_EQUALS then "*=" else "*"
+		elseif byte == BYTE_SLASH then
+			if nextByte == BYTE_SLASH then
+				operator = if string.byte(source, index + 2) == BYTE_EQUALS then "//=" else "//"
+			else
+				operator = if nextByte == BYTE_EQUALS then "/=" else "/"
+			end
+		elseif byte == BYTE_LESS_THAN then
+			operator = if nextByte == BYTE_EQUALS then "<=" else "<"
+		elseif byte == BYTE_GREATER_THAN then
+			operator = if nextByte == BYTE_EQUALS then ">=" else ">"
+		elseif byte == BYTE_TILDE then
+			operator = if nextByte == BYTE_EQUALS then "~=" else "~"
+		elseif byte == BYTE_PERCENT then
+			operator = if nextByte == BYTE_EQUALS then "%=" else "%"
+		elseif byte == BYTE_CARET then
+			operator = if nextByte == BYTE_EQUALS then "^=" else "^"
+		elseif byte == BYTE_SEMICOLON then
+			operator = ";"
+		elseif byte == BYTE_HASH then
+			operator = "#"
+		elseif byte == BYTE_QUESTION then
+			operator = "?"
+		elseif byte == BYTE_PIPE then
+			operator = "|"
+		elseif byte == BYTE_AMPERSAND then
+			operator = "&"
 		end
-		local two = string.sub(source, index, index + 1)
-		if TWO_CHAR_OPERATORS[two] then
-			index += 2
-			emit("operator", two)
-			handleOperator(two)
-			return
-		end
-		local one = string.sub(source, index, index)
-		index += 1
-		if SINGLE_CHAR_OPERATORS[one] then
-			emit("operator", one)
-			handleOperator(one)
+
+		if operator ~= nil then
+			-- The rebind casts because the new solver leaves the nil check's
+			-- intersection unsimplified instead of narrowing it to a string.
+			local operatorText = operator :: string
+			index += #operatorText
+			emit("operator", operatorText)
+			handleOperator(operatorText)
 		else
 			typeofArmed = false
 			typeContinues = false
-			emit("iden", one)
+			emit("iden", string.sub(source, index, index))
+			index += 1
 		end
 	end
 
@@ -692,12 +803,22 @@ local function scanSource(
 		local byte = string.byte(source, index)
 		if IS_SPACE[byte] then
 			local start = index
-			repeat
+			local sawNewline = byte == BYTE_NEWLINE
+			while true do
 				index += 1
-			until index > size or not IS_SPACE[string.byte(source, index)]
-			local run = string.sub(source, start, index - 1)
-			emitSuffix(run)
-			if string.find(run, "\n", 1, true) ~= nil then
+				if index > size then
+					break
+				end
+				local spaceByte = string.byte(source, index)
+				if not IS_SPACE[spaceByte] then
+					break
+				end
+				if spaceByte == BYTE_NEWLINE then
+					sawNewline = true
+				end
+			end
+			emitSuffix(string.sub(source, start, index - 1))
+			if sawNewline then
 				checkTypeNewline()
 			end
 		else

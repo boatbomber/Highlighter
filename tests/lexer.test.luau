@@ -83,6 +83,12 @@ describe("keywords, identifiers, and builtins", function()
 		expect(kindAt("foo.math.@@floor(1)")).toBe("iden")
 	end)
 
+	it("recognizes library members when a concat precedes the library", function()
+		-- The token before the library is the concat operator rather than a
+		-- member access dot, so the library really is the global here.
+		expect(kindAt('local s = x .. math.@@floor(1) .. "px"')).toBe("builtin")
+	end)
+
 	it("knows the buffer and vector libraries", function()
 		expect(kindAt("@@buffer.create(4)")).toBe("builtin")
 		expect(kindAt("buffer.@@create(4)")).toBe("builtin")

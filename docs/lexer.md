@@ -28,7 +28,7 @@ The scanner cannot yield a token the moment it ends, because whitespace after it
 
 When the scanner is in a type context, any identifier that is not a keyword emits as a `type` token, unless the context is suspended inside `typeof(...)`, which takes a value expression.
 
-Outside type contexts the word tables in `language.luau` decide. Global builtins like `print` emit as `builtin`. A library member like the `floor` in `math.floor` also emits as `builtin`, using the last three emitted token texts as context. The member must sit directly after a dot, the token before the dot must be a known library, and the token before that must not itself end in a dot, which keeps `foo.math.floor` from counting. Everything else is an `iden`.
+Outside type contexts the word tables in `language.luau` decide. Global builtins like `print` emit as `builtin`. A library member like the `floor` in `math.floor` also emits as `builtin`, using the last three emitted token lexemes as context. The member must sit directly after a dot, the token before the dot must be a known library, and the token before that must not itself be a member access dot, which keeps `foo.math.floor` from counting while a concat like `x .. math.floor(y)` still does. The previous lexemes are tracked whitespace free, and a resumed scan strips its seeded values once, so these checks are plain equality against interned strings rather than pattern matches. Everything else is an `iden`.
 
 ## Numbers
 
@@ -52,7 +52,7 @@ An at sign followed by an identifier start lexes as one token, so `@native` matc
 
 ## Operators
 
-`scanOperator` tries three character lexemes first, then two, then one, against the sets in `constants.luau`. A byte that belongs to no operator emits as a single character `iden` so coverage never breaks on unexpected input. Every matched operator then passes through `handleOperator`, which applies its side effects. Parens, braces, and brackets adjust the bracket depth. The `::`, `->`, and annotation colon operators enter the type context. Equals signs, commas, semicolons, and closing brackets exit it at the appropriate depths. Angle brackets track generic argument nesting while a type context is active.
+`scanOperator` dispatches on the operator's first byte through a chain of comparisons, checking longer lexemes before their prefixes so `..=` wins over `..` and a lone dot. The chain is ordered roughly by how often each family appears in real code, and every emitted lexeme is an interned literal, so the path allocates no substrings and touches no lookup tables. A byte that belongs to no operator emits as a single character `iden` so coverage never breaks on unexpected input. Every matched operator then passes through `handleOperator`, which applies its side effects. Parens, braces, and brackets adjust the bracket depth. The `::`, `->`, and annotation colon operators enter the type context. Equals signs, commas, semicolons, and closing brackets exit it at the appropriate depths. Angle brackets track generic argument nesting while a type context is active.
 
 ## The type context machine
 

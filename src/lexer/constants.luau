@@ -2,8 +2,9 @@
 
 --[[
 	Static classification tables the scanner dispatches on. The language module
-	holds the word tables, while this module holds raw byte values, byte class
-	lookups, and operator lexeme sets.
+	holds the word tables, while this module holds raw byte values and byte
+	class lookups. Operator lexemes and the type context words live inline in
+	the scanner's comparison chains since nothing else reads them.
 ]]
 
 -- Byte class lookups, indexed by byte value. Bytes at 128 and above are
@@ -24,57 +25,6 @@ for byteValue = 0, 255 do
 	IS_NUMBER_TAIL[byteValue] = string.find(char, "[%w_]") ~= nil
 end
 
--- Operator lexemes by length, checked longest first.
-local THREE_CHAR_OPERATORS: { [string]: boolean } = { ["..="] = true, ["..."] = true, ["//="] = true }
-local TWO_CHAR_OPERATORS: { [string]: boolean } = {
-	["::"] = true,
-	["->"] = true,
-	["=="] = true,
-	["~="] = true,
-	["<="] = true,
-	[">="] = true,
-	["+="] = true,
-	["-="] = true,
-	["*="] = true,
-	["/="] = true,
-	["%="] = true,
-	["^="] = true,
-	[".."] = true,
-	["//"] = true,
-}
--- The at sign is absent because the scanner dispatches it to the attribute
--- path before operators are considered.
-local SINGLE_CHAR_OPERATORS: { [string]: boolean } = {}
-for char in string.gmatch("+-*/%^#<>=(){}[];:,.?|&~", ".") do
-	SINGLE_CHAR_OPERATORS[char] = true
-end
-
--- Tokens that let a type context survive a line break, like a trailing
--- union bar before a wrapped union member.
-local TYPE_CONTINUERS: { [string]: boolean } = {
-	["|"] = true,
-	["&"] = true,
-	[","] = true,
-	["<"] = true,
-	["("] = true,
-	["{"] = true,
-	["["] = true,
-	["->"] = true,
-	["::"] = true,
-	[":"] = true,
-	["="] = true,
-	["."] = true,
-}
-
--- Keywords that appear inside type expressions without ending them, since
--- nil, true, and false are singleton types and typeof wraps a value.
-local TYPE_EXPRESSION_KEYWORDS: { [string]: boolean } = {
-	["nil"] = true,
-	["true"] = true,
-	["false"] = true,
-	["typeof"] = true,
-}
-
 return {
 	-- Byte values the dispatcher compares against directly.
 	BYTE_NEWLINE = string.byte("\n"),
@@ -85,13 +35,27 @@ return {
 	BYTE_BACKSLASH = string.byte("\\"),
 	BYTE_DASH = string.byte("-"),
 	BYTE_PLUS = string.byte("+"),
+	BYTE_STAR = string.byte("*"),
+	BYTE_SLASH = string.byte("/"),
+	BYTE_PERCENT = string.byte("%"),
+	BYTE_CARET = string.byte("^"),
+	BYTE_HASH = string.byte("#"),
+	BYTE_TILDE = string.byte("~"),
 	BYTE_DOT = string.byte("."),
+	BYTE_COMMA = string.byte(","),
+	BYTE_COLON = string.byte(":"),
+	BYTE_SEMICOLON = string.byte(";"),
+	BYTE_QUESTION = string.byte("?"),
+	BYTE_PIPE = string.byte("|"),
+	BYTE_AMPERSAND = string.byte("&"),
 	BYTE_UNDERSCORE = string.byte("_"),
 	BYTE_EQUALS = string.byte("="),
 	BYTE_OPEN_PAREN = string.byte("("),
+	BYTE_CLOSE_PAREN = string.byte(")"),
 	BYTE_OPEN_BRACE = string.byte("{"),
 	BYTE_CLOSE_BRACE = string.byte("}"),
 	BYTE_OPEN_BRACKET = string.byte("["),
+	BYTE_CLOSE_BRACKET = string.byte("]"),
 	BYTE_LESS_THAN = string.byte("<"),
 	BYTE_GREATER_THAN = string.byte(">"),
 	BYTE_AT = string.byte("@"),
@@ -105,11 +69,4 @@ return {
 	IS_IDEN_START = IS_IDEN_START,
 	IS_IDEN_CHAR = IS_IDEN_CHAR,
 	IS_NUMBER_TAIL = IS_NUMBER_TAIL,
-
-	THREE_CHAR_OPERATORS = THREE_CHAR_OPERATORS,
-	TWO_CHAR_OPERATORS = TWO_CHAR_OPERATORS,
-	SINGLE_CHAR_OPERATORS = SINGLE_CHAR_OPERATORS,
-
-	TYPE_CONTINUERS = TYPE_CONTINUERS,
-	TYPE_EXPRESSION_KEYWORDS = TYPE_EXPRESSION_KEYWORDS,
 }
