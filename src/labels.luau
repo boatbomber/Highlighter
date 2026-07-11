@@ -111,10 +111,10 @@ local function alignLabels(textObject: types.TextObject)
 end
 
 --[[
-	Matches the line labels' color, font, and text size to the textObject and
-	the active theme. Label creation writes the same properties, so this only
-	needs to run when the font or text size changes and when the theme
-	refreshes.
+	Matches the line labels' font and text size to the textObject. Label
+	creation writes the same properties, so this only needs to run when the
+	font or text size changes, while theme refreshes recolor the labels in
+	Labels.refresh instead.
 ]]
 local function restyleLabels(textObject: types.TextObject)
 	local data = textObjectData[textObject]
@@ -122,11 +122,11 @@ local function restyleLabels(textObject: types.TextObject)
 		return
 	end
 
-	local labelingInfo = getLabelingInfo(textObject, data)
+	local textFont = textObject.FontFace
+	local textSize = textObject.TextSize
 	for _, lineLabel in data.Labels do
-		lineLabel.TextColor3 = labelingInfo.textColor
-		lineLabel.FontFace = labelingInfo.textFont
-		lineLabel.TextSize = labelingInfo.textSize
+		lineLabel.FontFace = textFont
+		lineLabel.TextSize = textSize
 	end
 end
 
@@ -148,6 +148,32 @@ local function blankLabelsFrom(data: types.ObjectData, firstLine: number)
 end
 
 --[[
+	Builds a navigator from the lexer's factory when the result carries the
+	full TokenNavigator contract populate resumes through. A factory whose
+	navigator lacks any of the required methods yields nil instead, which
+	keeps lexers built against a looser navigator shape rendering through
+	the plain scanning path rather than crashing mid populate.
+]]
+local function buildNavigator(lexer: types.Lexer): types.TokenNavigator?
+	local navigatorFactory = lexer.navigator
+	if navigatorFactory == nil then
+		return nil
+	end
+	local candidate: any = navigatorFactory()
+	if
+		type(candidate) ~= "table"
+		or type(candidate.SetSource) ~= "function"
+		or type(candidate.HotswapSource) ~= "function"
+		or type(candidate.SeekToByte) ~= "function"
+		or type(candidate.Next) ~= "function"
+		or type(candidate.Destroy) ~= "function"
+	then
+		return nil
+	end
+	return candidate
+end
+
+--[[
 	Creates and populates the line labels with the appropriate rich text.
 ]]
 local function populateLabels(props: types.HighlightProps)
@@ -165,22 +191,26 @@ local function populateLabels(props: types.HighlightProps)
 
 	-- When nothing changed at all, the update skips entirely unless the
 	-- caller forces one. Everything else rebuilds every line, and the per
-	-- line cache below decides which labels actually need a write.
+	-- line cache below decides which labels actually need a write. The
+	-- cached source only counts as unchanged while the Instance side still
+	-- matches it, since a raw Text write can normalize back to the cached
+	-- string and the label folder can be deleted out from under us. Empty
+	-- sources deliberately have no folder, so they skip that check.
 	local forceUpdate = props.forceUpdate == true or lexer ~= data.Lexer or customLang ~= data.CustomLang
-	if data.Text == src and not forceUpdate then
-		return
+	if data.Text == src and not forceUpdate and textObject.Text == src then
+		if src == "" or textObject:FindFirstChild("SyntaxHighlights") ~= nil then
+			return
+		end
 	end
-
-	-- Luau cannot assign properties through a union of instance types, so writes
-	-- go through this narrowed alias. TextBox shares every property written here.
-	local writableTextObject = textObject :: TextLabel
-
-	-- The textObject text always matches the normalized source.
-	writableTextObject.Text = src
 
 	local lineLabels = data.Labels
 	local richLines = data.RichLines
 
+	-- Every cache updates before the Text write below, because under
+	-- immediate signal behavior that write re-enters populate through the
+	-- Text connection synchronously, and the nested call must find a fully
+	-- updated cache so its early return fires instead of rebuilding the
+	-- same lines a second time.
 	data.Text = src
 
 	-- The navigator's token cache belongs to the lexer that filled it, so a
@@ -190,15 +220,18 @@ local function populateLabels(props: types.HighlightProps)
 		if data.Navigator ~= nil then
 			data.Navigator:Destroy()
 		end
-		data.Navigator = nil
-		local navigatorFactory = lexer.navigator
-		if navigatorFactory ~= nil then
-			data.Navigator = navigatorFactory()
-		end
+		data.Navigator = buildNavigator(lexer)
 	end
 
 	data.Lexer = lexer
 	data.CustomLang = customLang
+
+	-- Luau cannot assign properties through a union of instance types, so writes
+	-- go through this narrowed alias. TextBox shares every property written here.
+	local writableTextObject = textObject :: TextLabel
+
+	-- The textObject text always matches the normalized source.
+	writableTextObject.Text = src
 
 	-- Empty sources blank the existing labels and skip the lexer entirely.
 	-- The navigator resets too, since the blanked labels no longer reflect
@@ -234,15 +267,31 @@ local function populateLabels(props: types.HighlightProps)
 
 	local labelingInfo = getLabelingInfo(textObject, data)
 
+	-- A force update distrusts every cached line, and clearing the cache is
+	-- what makes the diff below write each one. The clear sits after the
+	-- labeling info read so the line count sizing new labels still reflects
+	-- the previous build.
+	if forceUpdate then
+		table.clear(richLines)
+	end
+
 	--[[
 		Grabs the label for the given line, building and positioning a new one
 		when the line has never had a label before.
 	]]
 	local function getOrCreateLabel(lineNumber: number): TextLabel
-		local lineLabel = lineLabels[lineNumber]
-		if lineLabel then
+		-- The cached label only counts while it still sits in the folder.
+		-- Writes to a destroyed instance succeed silently, so without the
+		-- liveness check a label deleted from outside would eat every future
+		-- write for its line. The dead label's cached rich line clears too,
+		-- so the replacement always receives the text it missed. The array's
+		-- indexer claims every read succeeds, so the annotation widens the
+		-- result back to optional for the check.
+		local lineLabel: TextLabel? = lineLabels[lineNumber]
+		if lineLabel ~= nil and lineLabel.Parent == lineFolder then
 			return lineLabel
 		end
+		richLines[lineNumber] = nil
 
 		local newLabel = Instance.new("TextLabel")
 		newLabel.Name = "Line_" .. lineNumber
@@ -265,41 +314,10 @@ local function populateLabels(props: types.HighlightProps)
 
 	-- Reading tokens through the navigator lets an edit reuse every cached
 	-- token the scanner proves untouched, so a keystroke near the end of the
-	-- source only pays to rescan the tail. Hotswapping an unchanged source
-	-- keeps the whole cache, which is what force updates from theme and
-	-- customLang changes drain.
-	local navigator = data.Navigator
-	local tokens: (() -> (string?, string))? = nil
-	local startLine = 1
-	if navigator ~= nil then
-		local reusedBytes: number = navigator:HotswapSource(src)
-
-		-- Every line that ends inside the reused bytes rebuilds byte
-		-- identical to what its label already shows, so the build starts at
-		-- the first line the edit could have changed.
-		local buildFromByte = 1
-		if canSkipLines then
-			local newlineAt = string.find(src, "\n", 1, true)
-			while newlineAt ~= nil and newlineAt <= reusedBytes do
-				startLine += 1
-				buildFromByte = newlineAt + 1
-				newlineAt = string.find(src, "\n", newlineAt + 1, true)
-			end
-		end
-
-		-- The first read comes back from the cache as a whole token, so any
-		-- head bytes belonging to already skipped lines trim off before the
-		-- builder sees it.
-		local trimHead: number = navigator:SeekToByte(buildFromByte)
-		tokens = function(): (string?, string)
-			local kind, content = navigator:Next()
-			if trimHead > 0 and kind ~= nil then
-				content = string.sub(content, trimHead + 1)
-				trimHead = 0
-			end
-			return kind, content
-		end
-	end
+	-- source only pays to rescan and rebuild the tail lines. Hotswapping an
+	-- unchanged source keeps the whole cache, which is what force updates
+	-- from theme and customLang changes drain.
+	local tokens, startLine = RichText.resumeTokens(data.Navigator, src, canSkipLines)
 
 	local lastLine = RichText.buildLines({
 		src = src,
@@ -310,14 +328,14 @@ local function populateLabels(props: types.HighlightProps)
 		alwaysTagText = false,
 		onLine = function(lineNumber: number, richText: string)
 			-- Labels exist for every line, while text only writes when the
-			-- built output differs from what the label already shows. The
-			-- comparison is against built output rather than raw source
-			-- lines because an edit on an earlier line can change a later
-			-- line's tokens without touching its text. A forced update
-			-- distrusts the labels entirely and writes every line, which is
+			-- built output differs from the cached rich line. The comparison
+			-- is against built output rather than raw source lines because
+			-- an edit on an earlier line can change a later line's tokens
+			-- without touching its text. Force updates clear the cache up
+			-- front, which makes this comparison write every line and is
 			-- what lets refresh repair externally clobbered label text.
 			local lineLabel = getOrCreateLabel(lineNumber)
-			if forceUpdate or richLines[lineNumber] ~= richText then
+			if richLines[lineNumber] ~= richText then
 				richLines[lineNumber] = richText
 				lineLabel.Text = richText
 			end
@@ -344,9 +362,6 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 		return cleanups[textObject]
 	end
 
-	local lexer = props.lexer or defaultLexer
-	local customLang = props.customLang
-
 	-- Luau cannot assign properties through a union of instance types, so writes
 	-- go through this narrowed alias. TextBox shares every property written here.
 	-- The normalized source itself writes inside populateLabels, which is the
@@ -359,22 +374,15 @@ function Labels.highlight(props: types.HighlightProps): () -> ()
 	writableTextObject.TextColor3 = Theme.getColor("iden")
 	writableTextObject.TextTransparency = 0.5
 
-	-- A lexer that offers a navigator factory gets one navigator per tracked
-	-- textObject, which is what lets populate reuse cached tokens across
-	-- edits instead of rescanning the whole source.
-	local navigator: any = nil
-	local navigatorFactory = lexer.navigator
-	if navigatorFactory ~= nil then
-		navigator = navigatorFactory()
-	end
-
+	-- The lexer starts nil so the first populate takes its lexer change
+	-- branch, which is the one place navigators get built and torn down.
 	local data: types.ObjectData = {
 		Text = "",
 		Labels = {},
 		RichLines = {},
-		Lexer = lexer,
-		CustomLang = customLang,
-		Navigator = navigator,
+		Lexer = nil,
+		CustomLang = props.customLang,
+		Navigator = nil,
 	}
 	textObjectData[textObject] = data
 
@@ -451,20 +459,25 @@ end
 	Refreshes all highlighted textObjects. Used when the theme changes.
 ]]
 function Labels.refresh(): ()
+	local backgroundColor = Theme.getColor("background")
+	local idenColor = Theme.getColor("iden")
+
 	for textObject, data in textObjectData do
 		-- The base object colors only write on the first highlight call, so
-		-- a theme change reapplies them here. The write goes through a
+		-- a theme change reapplies them here, along with each label's own
+		-- color since untagged text renders in it. The writes go through a
 		-- narrowed alias because Luau cannot assign through a union of
-		-- instance types.
+		-- instance types. Geometry stays untouched because a color change
+		-- cannot move it, which is why this calls populate directly rather
+		-- than paying highlight's realignment pass.
 		local writableTextObject = textObject :: TextLabel
-		writableTextObject.BackgroundColor3 = Theme.getColor("background")
-		writableTextObject.TextColor3 = Theme.getColor("iden")
+		writableTextObject.BackgroundColor3 = backgroundColor
+		writableTextObject.TextColor3 = idenColor
+		for _, lineLabel in data.Labels do
+			lineLabel.TextColor3 = idenColor
+		end
 
-		-- Untagged label text renders in the label's own color, so a theme
-		-- change has to restyle the labels too.
-		restyleLabels(textObject)
-
-		Labels.highlight({
+		populateLabels({
 			textObject = textObject,
 			forceUpdate = true,
 			src = data.Text,

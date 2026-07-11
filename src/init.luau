@@ -61,10 +61,7 @@ end
 	Does nothing when not run in a Studio plugin.
 ]]
 function Highlighter.matchStudioSettings(): ()
-	local applied = Theme.matchStudioSettings(Labels.refresh)
-	if applied then
-		Labels.refresh()
-	end
+	Theme.matchStudioSettings(Labels.refresh)
 end
 
 return Highlighter

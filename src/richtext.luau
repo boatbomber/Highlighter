@@ -68,10 +68,66 @@ local WORD_KINDS: { [string]: boolean } = {
 }
 
 --[[
-	Escapes characters that rich text would otherwise parse as markup.
+	Escapes characters that rich text would otherwise parse as markup. Most
+	tokens carry no markup characters, and gsub would still build and rehash
+	a byte identical copy for them, so a find gates the gsub to text that
+	actually needs escaping.
 ]]
 function RichText.sanitize(text: string): string
+	if string.find(text, RICH_TEXT_UNSAFE) == nil then
+		return text
+	end
 	return (string.gsub(text, RICH_TEXT_UNSAFE, RICH_TEXT_ESCAPES))
+end
+
+--[[
+	Builds the token iterator and start line that resume a rebuild through a
+	navigator's cache. The navigator hotswaps to src, and when canSkip is
+	true every line ending inside the reused bytes is skipped, so the
+	iterator starts at the first line the edit could have changed with the
+	head of its first token trimmed to that line's first byte. Callers hand
+	both results to buildLines together, since the iterator only covers src
+	from the returned line on. A nil navigator yields a nil iterator, which
+	makes buildLines scan src itself from line one.
+]]
+function RichText.resumeTokens(
+	navigator: types.TokenNavigator?,
+	src: string,
+	canSkip: boolean
+): ((() -> (string?, string))?, number)
+	if navigator == nil then
+		return nil, 1
+	end
+
+	local reusedBytes = navigator:HotswapSource(src)
+
+	-- Every line that ends inside the reused bytes rebuilds byte identical
+	-- to what its consumer already holds, so the walk finds the first line
+	-- the edit could have changed and the byte it starts on.
+	local startLine = 1
+	local buildFromByte = 1
+	if canSkip then
+		local newlineAt = string.find(src, "\n", 1, true)
+		while newlineAt ~= nil and newlineAt <= reusedBytes do
+			startLine += 1
+			buildFromByte = newlineAt + 1
+			newlineAt = string.find(src, "\n", newlineAt + 1, true)
+		end
+	end
+
+	-- The first read comes back from the cache as a whole token, so any
+	-- head bytes belonging to already skipped lines trim off before the
+	-- consumer sees them.
+	local trimHead = navigator:SeekToByte(buildFromByte)
+	return function(): (string?, string)
+		local kind, content = navigator:Next()
+		if trimHead > 0 and kind ~= nil then
+			content = string.sub(content, trimHead + 1)
+			trimHead = 0
+		end
+		return kind, content
+	end,
+		startLine
 end
 
 --[[

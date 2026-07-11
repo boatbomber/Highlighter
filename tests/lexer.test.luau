@@ -8,8 +8,9 @@ local describe = JestGlobals.describe
 local it = JestGlobals.it
 local expect = JestGlobals.expect
 
-local lexer = require(Packages:WaitForChild("Highlighter"):WaitForChild("lexer"))
+local Lexer = require(Packages:WaitForChild("Highlighter"):WaitForChild("lexer"))
 local Navigator = require(Packages:WaitForChild("Highlighter"):WaitForChild("lexer"):WaitForChild("navigator"))
+local Spies = require(script.Parent:WaitForChild("spies"))
 
 --[[
 	Finds the "@@" caret marker in a snippet, removes it, scans the remaining
@@ -21,7 +22,7 @@ local function tokenAt(snippet: string): (string?, string?)
 	assert(markerStart, "snippet has no @@ marker")
 	local source = string.sub(snippet, 1, markerStart - 1) .. string.sub(snippet, markerStart + 2)
 	local index = 1
-	for kind, content in lexer.scan(source) do
+	for kind, content in Lexer.scan(source) do
 		local finish = index + #content - 1
 		if markerStart <= finish then
 			return kind, string.match(content, "^%s*(.-)%s*$")
@@ -46,7 +47,7 @@ end
 ]]
 local function rebuild(source: string): string
 	local parts = {}
-	for _, content in lexer.scan(source) do
+	for _, content in Lexer.scan(source) do
 		table.insert(parts, content)
 	end
 	return table.concat(parts)
@@ -293,6 +294,11 @@ describe("type positions", function()
 		expect(kindAt("type T = typeof(@@game)")).toBe("builtin")
 	end)
 
+	it("keeps typeof armed across a comment before its paren", function()
+		expect(kindAt("type T = typeof --[[why]] (@@game)")).toBe("builtin")
+		expect(kindAt("type T = typeof -- note\n(@@game)")).toBe("builtin")
+	end)
+
 	it("continues a union past a line break", function()
 		expect(kindAt("local x: number |\n@@string")).toBe("type")
 	end)
@@ -307,6 +313,17 @@ describe("type positions", function()
 		expect(kindAt("type Mode =\n\t| Alpha\n\t| @@Beta")).toBe("type")
 		expect(kindAt("local x: Alpha\n\t& @@Beta")).toBe("type")
 		expect(kindAt("type F = (number)\n\t-> @@string")).toBe("type")
+	end)
+
+	it("keeps a multiline union alive past a trailing comment", function()
+		expect(kindAt("type Mode =\n\t| Alpha -- first\n\t| @@Beta")).toBe("type")
+		expect(kindAt("local x: Alpha -- both\n\t& @@Beta")).toBe("type")
+		expect(kindAt("type F = (number) -- ret\n\t-> @@string")).toBe("type")
+	end)
+
+	it("keeps a multiline union alive past a comment line", function()
+		expect(kindAt("type Mode =\n\t| Alpha\n\t-- doc\n\t| @@Beta")).toBe("type")
+		expect(kindAt("type Mode =\n\t| Alpha\n\t--[[ doc\n\tspanning ]]\n\t| @@Beta")).toBe("type")
 	end)
 end)
 
@@ -378,13 +395,13 @@ describe("scanEach", function()
 		-- tests stay green.
 		for _, source in COVERAGE_SOURCES do
 			local scanned = {}
-			for kind, content in lexer.scan(source) do
+			for kind, content in Lexer.scan(source) do
 				table.insert(scanned, kind)
 				table.insert(scanned, content)
 			end
 
 			local walked = {}
-			lexer.scanEach(source, function(kind, content)
+			Lexer.scanEach(source, function(kind, content)
 				table.insert(walked, kind)
 				table.insert(walked, content)
 			end)
@@ -401,14 +418,14 @@ describe("scan from a start index", function()
 		assert(startIndex, "sample lost its print call")
 
 		local parts = {}
-		for _, content in lexer.scan(source, startIndex) do
+		for _, content in Lexer.scan(source, startIndex) do
 			table.insert(parts, content)
 		end
 		expect(table.concat(parts)).toBe(string.sub(source, startIndex))
 	end)
 
 	it("yields nothing when the start index is past the end", function()
-		local kind, content = lexer.scan("abc", 10)()
+		local kind, content = Lexer.scan("abc", 10)()
 		expect(kind).toBe(nil)
 		expect(content).toBe("")
 	end)
@@ -416,7 +433,7 @@ end)
 
 describe("iterator contract", function()
 	it("returns nil and an empty string once exhausted", function()
-		local iterator = lexer.scan("local x = 1")
+		local iterator = Lexer.scan("local x = 1")
 		local kind, content = iterator()
 		while kind ~= nil do
 			kind, content = iterator()
@@ -429,15 +446,31 @@ describe("iterator contract", function()
 	end)
 
 	it("returns nil and an empty string for an empty source", function()
-		local kind, content = lexer.scan("")()
+		local kind, content = Lexer.scan("")()
 		expect(kind).toBe(nil)
 		expect(content).toBe("")
 	end)
 end)
 
+--[[
+	Drains a navigator with Next and returns its kinds and contents as two
+	arrays. Tests use it to run a navigator dry and to compare two navigators
+	token by token.
+]]
+local function drain(nav): ({ string }, { string })
+	local kinds, contents = {}, {}
+	local kind, content = nav:Next()
+	while kind ~= nil do
+		table.insert(kinds, kind)
+		table.insert(contents, content)
+		kind, content = nav:Next()
+	end
+	return kinds, contents
+end
+
 describe("navigator", function()
 	it("iterates tokens with Next and Peek", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
 
 		local kind, content = nav:Next()
@@ -453,7 +486,7 @@ describe("navigator", function()
 	end)
 
 	it("peeks without advancing", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
 
 		local firstPeekKind, firstPeekContent = nav:Peek(1)
@@ -467,7 +500,7 @@ describe("navigator", function()
 	end)
 
 	it("peeks multiple tokens ahead", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
 
 		local kind, content = nav:Peek(3)
@@ -476,7 +509,7 @@ describe("navigator", function()
 	end)
 
 	it("peeks backward into already read tokens", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
 		nav:Next()
 		nav:Next()
@@ -487,7 +520,7 @@ describe("navigator", function()
 	end)
 
 	it("returns nil when reading or peeking past the end", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("x")
 
 		expect(nav:Peek(5)).toBe(nil)
@@ -499,7 +532,7 @@ describe("navigator", function()
 	end)
 
 	it("keeps its position when reading past the end", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
 
 		-- Ten reads drain the four tokens and then keep reading past the end.
@@ -516,11 +549,9 @@ describe("navigator", function()
 	end)
 
 	it("resets its position when the source changes", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
-		-- selene: allow(empty_loop)
-		while nav:Next() ~= nil do
-		end
+		drain(nav)
 
 		nav:SetSource("print(1)")
 		local kind, content = nav:Next()
@@ -529,7 +560,7 @@ describe("navigator", function()
 	end)
 
 	it("destroys without error", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
 		nav:Next()
 
@@ -539,7 +570,7 @@ describe("navigator", function()
 	end)
 
 	it("hotswaps to a new source", function()
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource("local x = 1")
 		nav:Next()
 		nav:Next()
@@ -555,12 +586,46 @@ describe("navigator", function()
 		expect(table.concat(parts)).toBe("local x = 2 -- changed")
 	end)
 
-	it("seeks to the token containing a byte position", function()
-		local nav = lexer.navigator()
-		nav:SetSource("abc def ghi")
-		-- selene: allow(empty_loop)
-		while nav:Next() ~= nil do
+	it("propagates a scan error instead of ending the stream", function()
+		--[[
+			Builds a navigator over a scan that works for two tokens and then
+			throws, standing in for a buggy custom lexer. The failure has to
+			surface as an error rather than reading like a clean end of the
+			source, which would silently blank everything past it.
+		]]
+		local function failingNavigator()
+			local nav = Navigator.new(function(src: string, startIndex: number?, seed)
+				local iterate = Lexer.scanRestartable(src, startIndex, seed)
+				local produced = 0
+				return function()
+					produced += 1
+					if produced > 2 then
+						error("scanner exploded")
+					end
+					return iterate()
+				end
+			end)
+			nav:SetSource("local x = 1")
+			return nav
 		end
+
+		local nav = failingNavigator()
+		expect((nav:Next())).never.toBe(nil)
+		expect((nav:Next())).never.toBe(nil)
+		expect(function()
+			nav:Next()
+		end).toThrow("scanner exploded")
+
+		local peeked = failingNavigator()
+		expect(function()
+			peeked:Peek(3)
+		end).toThrow("scanner exploded")
+	end)
+
+	it("seeks to the token containing a byte position", function()
+		local nav = Lexer.navigator()
+		nav:SetSource("abc def ghi")
+		drain(nav)
 
 		-- The tokens are "abc ", "def ", and "ghi", so byte 5 starts the
 		-- second token exactly and byte 7 lands two bytes into it.
@@ -584,34 +649,9 @@ describe("navigator", function()
 	end)
 end)
 
---[[
-	Drains a navigator with Next and returns its kinds and contents as two
-	arrays, so two navigators can be compared token by token.
-]]
-local function drain(nav): ({ string }, { string })
-	local kinds, contents = {}, {}
-	local kind, content = nav:Next()
-	while kind ~= nil do
-		table.insert(kinds, kind)
-		table.insert(contents, content)
-		kind, content = nav:Next()
-	end
-	return kinds, contents
-end
-
---[[
-	Builds a navigator whose scans record their start bytes, so tests can
-	prove a hotswap resumed partway through the source instead of rescanning,
-	without reading the navigator's internals.
-]]
-local function navigatorWithScanSpy(): (any, { number })
-	local scanStarts: { number } = {}
-	local nav = Navigator.new(function(src: string, startIndex: number?, seed: any)
-		table.insert(scanStarts, startIndex or 1)
-		return lexer.scanRestartable(src, startIndex, seed)
-	end)
-	return nav, scanStarts
-end
+-- The scan spy proves a hotswap resumed partway through the source instead
+-- of rescanning, without reading the navigator's internals.
+local navigatorWithScanSpy = Spies.navigatorWithScanSpy
 
 --[[
 	Scans oldSource through a navigator, hotswaps it to newSource, and
@@ -631,9 +671,7 @@ local function expectHotswapMatchesFresh(
 	local swapped, scanStarts = navigatorWithScanSpy()
 	swapped:SetSource(oldSource)
 	if preScanCount == nil then
-		-- selene: allow(empty_loop)
-		while swapped:Next() ~= nil do
-		end
+		drain(swapped)
 	else
 		for _ = 1, preScanCount do
 			swapped:Next()
@@ -642,7 +680,7 @@ local function expectHotswapMatchesFresh(
 
 	swapped:HotswapSource(newSource)
 
-	local fresh = lexer.navigator()
+	local fresh = Lexer.navigator()
 	fresh:SetSource(newSource)
 
 	local swappedKinds, swappedContents = drain(swapped)
@@ -690,6 +728,14 @@ describe("hotswap reuse", function()
 		expectHotswapMatchesFresh(head .. "2)} done`", head .. "30)} done`")
 	end)
 
+	it("re-reads a lookahead that skipped a comment past the edit", function()
+		-- The colon lookahead skips the comment and then peeks one byte past
+		-- the lone dash to rule out a second comment. The edit turns that
+		-- byte into a dash, which flips the annotation decision, so reuse
+		-- must not trust a snapshot whose watermark missed the peek.
+		expectHotswapMatchesFresh("o: --a\n-5\nz", "o: --a\n--\nz")
+	end)
+
 	it("handles a whitespace only edit at the boundary", function()
 		expectHotswapMatchesFresh("local a = 1\nlocal b = 2", "local a = 1\nlocal b  = 2")
 	end)
@@ -705,11 +751,9 @@ describe("hotswap reuse", function()
 
 	it("reports how many bytes of the source the kept tokens cover", function()
 		local body = string.rep("local x = math.floor(y) + 1\n", 30)
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource(body .. "print(1)")
-		-- selene: allow(empty_loop)
-		while nav:Next() ~= nil do
-		end
+		drain(nav)
 
 		-- The edit only touches the digit, so the kept tokens reach into the
 		-- final line while stopping short of the changed byte at #body + 7.
@@ -719,9 +763,7 @@ describe("hotswap reuse", function()
 
 		-- An identical swap covers everything and an unrelated source, which
 		-- falls back to a full rescan, covers nothing.
-		-- selene: allow(empty_loop)
-		while nav:Next() ~= nil do
-		end
+		drain(nav)
 		expect(nav:HotswapSource(body .. "print(2)")).toBe(#body + 8)
 		expect(nav:HotswapSource("nothing shared at the front")).toBe(0)
 	end)
@@ -730,9 +772,7 @@ describe("hotswap reuse", function()
 		local source = string.rep("local x = math.floor(1.5)\n", 5)
 		local nav, scanStarts = navigatorWithScanSpy()
 		nav:SetSource(source)
-		-- selene: allow(empty_loop)
-		while nav:Next() ~= nil do
-		end
+		drain(nav)
 
 		nav:HotswapSource(source)
 
@@ -756,16 +796,14 @@ describe("hotswap reuse", function()
 
 	it("peeks in both directions after a hotswap", function()
 		local body = string.rep("local x = 1\n", 10)
-		local nav = lexer.navigator()
+		local nav = Lexer.navigator()
 		nav:SetSource(body .. "print(1)")
-		-- selene: allow(empty_loop)
-		while nav:Next() ~= nil do
-		end
+		drain(nav)
 		nav:HotswapSource(body .. "print(2)")
 		nav:Next()
 		nav:Next()
 
-		local fresh = lexer.navigator()
+		local fresh = Lexer.navigator()
 		fresh:SetSource(body .. "print(2)")
 		fresh:Next()
 		fresh:Next()
@@ -784,13 +822,13 @@ end)
 
 describe("language tables", function()
 	it("exposes keywords, builtins, and libraries", function()
-		expect(lexer.language).toBeDefined()
-		expect(lexer.language.keyword["local"]).toBe("keyword")
-		expect(lexer.language.builtin["print"]).toBe("function")
-		expect(lexer.language.builtin["buffer"]).toBe("table")
-		expect(lexer.language.builtin["vector"]).toBe("table")
-		expect(lexer.language.libraries.math.floor).toBe("function")
-		expect(lexer.language.libraries.string.rep).toBe("function")
-		expect(lexer.language.libraries.vector.create).toBe("function")
+		expect(Lexer.language).toBeDefined()
+		expect(Lexer.language.keyword["local"]).toBe("keyword")
+		expect(Lexer.language.builtin["print"]).toBe("function")
+		expect(Lexer.language.builtin["buffer"]).toBe("table")
+		expect(Lexer.language.builtin["vector"]).toBe("table")
+		expect(Lexer.language.libraries.math.floor).toBe("function")
+		expect(Lexer.language.libraries.string.rep).toBe("function")
+		expect(Lexer.language.libraries.vector.create).toBe("function")
 	end)
 end)

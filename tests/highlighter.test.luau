@@ -300,4 +300,24 @@ describe("matchStudioSettings", function()
 
 		Highlighter.setTokenColors(saved)
 	end)
+
+	it("invokes the callback once when the initial apply succeeds", function()
+		local saved = saveColors()
+
+		local calls = 0
+		local applied = ThemeModule.matchStudioSettings(function()
+			calls += 1
+		end)
+
+		Highlighter.setTokenColors(saved)
+
+		-- Outside a Studio plugin the settings are unreachable, nothing
+		-- applies, and a silent callback is correct. The test place runs at
+		-- plugin security, so the applied branch is the one that exercises.
+		if applied then
+			expect(calls).toBe(1)
+		else
+			expect(calls).toBe(0)
+		end
+	end)
 end)

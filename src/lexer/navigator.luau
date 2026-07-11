@@ -57,21 +57,25 @@ end
 ]]
 function Navigator.new(scan: ScanFunction)
 	local nav = {
-		Source = "",
-		TokenCache = table.create(50) :: { { string } },
+		source = "",
 
 		realIndex = 0,
 		userIndex = 0,
 		scanThread = nil :: thread?,
 
-		-- Restart bookkeeping, parallel to TokenCache. endOffsets holds each
-		-- token's cumulative byte length, so endOffsets[k] + 1 is where the
-		-- token after k starts. restartDepths holds the bracket depth right
-		-- after a token and restartWatermarks the furthest byte the scan had
-		-- read by that point, lookahead included. Tokens the scan cannot
-		-- resume after store zero in both, and since a real watermark always
-		-- covers at least the first token plus its peek slack, a zero
-		-- watermark alone marks the absent snapshot.
+		-- Token storage and restart bookkeeping live in parallel flat
+		-- arrays so appending a token allocates no per token table and the
+		-- cache stays cheap for the garbage collector to trace. tokenKinds
+		-- and tokenContents hold each token's two halves. endOffsets holds
+		-- each token's cumulative byte length, so endOffsets[k] + 1 is
+		-- where the token after k starts. restartDepths holds the bracket
+		-- depth right after a token and restartWatermarks the furthest byte
+		-- the scan had read by that point, lookahead included. Tokens the
+		-- scan cannot resume after store zero in both, and since a real
+		-- watermark always covers at least the first token plus its peek
+		-- slack, a zero watermark alone marks the absent snapshot.
+		tokenKinds = table.create(50) :: { string },
+		tokenContents = table.create(50) :: { string },
 		endOffsets = table.create(50) :: { number },
 		restartDepths = table.create(50) :: { number },
 		restartWatermarks = table.create(50) :: { number },
@@ -86,10 +90,11 @@ function Navigator.new(scan: ScanFunction)
 	]]
 	local function buildScanThread(startIndex: number?, seed: ScanSeed?): thread
 		return coroutine.create(function()
-			for token, content, restartDepth, watermark in scan(nav.Source, startIndex, seed) do
+			for token, content, restartDepth, watermark in scan(nav.source, startIndex, seed) do
 				local tokenIndex = nav.realIndex + 1
 				nav.realIndex = tokenIndex
-				nav.TokenCache[tokenIndex] = { token, content }
+				nav.tokenKinds[tokenIndex] = token
+				nav.tokenContents[tokenIndex] = content
 				nav.endOffsets[tokenIndex] = (nav.endOffsets[tokenIndex - 1] or 0) + #content
 				if restartDepth ~= nil and watermark ~= nil then
 					nav.restartDepths[tokenIndex] = restartDepth
@@ -104,14 +109,34 @@ function Navigator.new(scan: ScanFunction)
 	end
 
 	--[[
+		Resumes the scan until the cache reaches goalIndex or the scan runs
+		out of tokens. A failed resume carries the scan's error, and it
+		propagates rather than masquerading as a clean end of the stream and
+		silently truncating whatever the caller is building.
+	]]
+	local function fillTo(goalIndex: number)
+		local scanThread = nav.scanThread
+		if scanThread == nil then
+			return
+		end
+		while nav.realIndex < goalIndex and coroutine.status(scanThread) ~= "dead" do
+			local success, message = coroutine.resume(scanThread)
+			if not success then
+				error(message, 0)
+			end
+		end
+	end
+
+	--[[
 		Clears every field so a discarded navigator keeps nothing alive.
 	]]
 	function nav:Destroy()
-		self.Source = nil
+		self.source = nil
 		self.realIndex = nil
 		self.userIndex = nil
-		self.TokenCache = nil
 		self.scanThread = nil
+		self.tokenKinds = nil
+		self.tokenContents = nil
 		self.endOffsets = nil
 		self.restartDepths = nil
 		self.restartWatermarks = nil
@@ -122,11 +147,12 @@ function Navigator.new(scan: ScanFunction)
 		and starting a fresh scan from the beginning.
 	]]
 	function nav.SetSource(_self: any, sourceString: string)
-		nav.Source = sourceString
+		nav.source = sourceString
 
 		nav.realIndex = 0
 		nav.userIndex = 0
-		table.clear(nav.TokenCache)
+		table.clear(nav.tokenKinds)
+		table.clear(nav.tokenContents)
 		table.clear(nav.endOffsets)
 		table.clear(nav.restartDepths)
 		table.clear(nav.restartWatermarks)
@@ -143,7 +169,7 @@ function Navigator.new(scan: ScanFunction)
 		reports the whole source and the full rescan fallback reports zero.
 	]]
 	function nav.HotswapSource(_self: any, sourceString: string): number
-		if sourceString == nav.Source then
+		if sourceString == nav.source then
 			nav.userIndex = 0
 			return #sourceString
 		end
@@ -154,9 +180,27 @@ function Navigator.new(scan: ScanFunction)
 		-- that also carries a restart snapshot, since tokens without one
 		-- ended somewhere the scanner state cannot be rebuilt, like inside
 		-- a type context or an open interpolation hole.
-		local sharedPrefix = commonPrefixLength(nav.Source, sourceString)
+		local sharedPrefix = commonPrefixLength(nav.source, sourceString)
+
+		-- A token's watermark always reaches past its own bytes, so every
+		-- token ending beyond the shared prefix is guaranteed to fail the
+		-- check below. Binary searching the end offsets for the last token
+		-- ending inside the prefix bounds the walk to candidates that can
+		-- actually qualify, which keeps a head edit from walking the whole
+		-- cache one token at a time.
+		local low, high = 1, nav.realIndex
+		local candidate = 0
+		while low <= high do
+			local mid = math.floor((low + high) / 2)
+			if nav.endOffsets[mid] <= sharedPrefix then
+				candidate = mid
+				low = mid + 1
+			else
+				high = mid - 1
+			end
+		end
+
 		local restartToken = 0
-		local candidate = nav.realIndex
 		while candidate > 0 do
 			-- A zero watermark marks a token with no snapshot, and it needs
 			-- its own check because zero always sits inside the prefix.
@@ -174,24 +218,22 @@ function Navigator.new(scan: ScanFunction)
 		end
 
 		for stale = nav.realIndex, restartToken + 1, -1 do
-			nav.TokenCache[stale] = nil
+			nav.tokenKinds[stale] = nil
+			nav.tokenContents[stale] = nil
 			nav.endOffsets[stale] = nil
 			nav.restartDepths[stale] = nil
 			nav.restartWatermarks[stale] = nil
 		end
 		nav.realIndex = restartToken
 		nav.userIndex = 0
-		nav.Source = sourceString
+		nav.source = sourceString
 
-		local cache = nav.TokenCache
-		local restartEntry = cache[restartToken]
-		local previousEntry = cache[restartToken - 1]
-		local secondPreviousEntry = cache[restartToken - 2]
+		local contents = nav.tokenContents
 		local seed: ScanSeed = {
 			depth = nav.restartDepths[restartToken],
-			previous1 = restartEntry[2],
-			previous2 = if previousEntry ~= nil then previousEntry[2] else "",
-			previous3 = if secondPreviousEntry ~= nil then secondPreviousEntry[2] else "",
+			previous1 = contents[restartToken],
+			previous2 = contents[restartToken - 1] or "",
+			previous3 = contents[restartToken - 2] or "",
 		}
 		nav.scanThread = buildScanThread(nav.endOffsets[restartToken] + 1, seed)
 		return nav.endOffsets[restartToken]
@@ -231,27 +273,14 @@ function Navigator.new(scan: ScanFunction)
 		-- The position only advances when a token actually comes back, so
 		-- reads past the end never drift where relative Peeks resolve.
 		local goalIndex = nav.userIndex + 1
-
+		if nav.realIndex < goalIndex then
+			fillTo(goalIndex)
+		end
 		if nav.realIndex >= goalIndex then
 			nav.userIndex = goalIndex
-			-- The entry indexes explicitly rather than unpacking so restart
-			-- bookkeeping can never leak extra return values to callers.
-			local entry = nav.TokenCache[goalIndex]
-			return entry[1], entry[2]
-		else
-			local scanThread = nav.scanThread
-			if scanThread == nil or coroutine.status(scanThread) == "dead" then
-				return
-			else
-				local success, token, content = coroutine.resume(scanThread)
-				if success and token then
-					nav.userIndex = goalIndex
-					return token, content
-				else
-					return
-				end
-			end
+			return nav.tokenKinds[goalIndex], nav.tokenContents[goalIndex]
 		end
+		return
 	end
 
 	--[[
@@ -261,37 +290,16 @@ function Navigator.new(scan: ScanFunction)
 	]]
 	function nav.Peek(_self: any, peekAmount: number): ...string?
 		local goalIndex = nav.userIndex + peekAmount
-
-		if nav.realIndex >= goalIndex then
-			if goalIndex > 0 then
-				local entry = nav.TokenCache[goalIndex]
-				return entry[1], entry[2]
-			else
-				return
-			end
-		else
-			local scanThread = nav.scanThread
-			if scanThread == nil or coroutine.status(scanThread) == "dead" then
-				return
-			else
-				local iterationsAway = goalIndex - nav.realIndex
-
-				local success: boolean?, token: string?, content: string? = nil, nil, nil
-
-				for _ = 1, iterationsAway do
-					success, token, content = coroutine.resume(scanThread)
-					if not (success and token) then
-						-- The scan is exhausted, or resume failed and put its
-						-- error message in the token slot, so the peek misses.
-						token = nil
-						content = nil
-						break
-					end
-				end
-
-				return token, content
-			end
+		if goalIndex <= 0 then
+			return
 		end
+		if nav.realIndex < goalIndex then
+			fillTo(goalIndex)
+		end
+		if nav.realIndex >= goalIndex then
+			return nav.tokenKinds[goalIndex], nav.tokenContents[goalIndex]
+		end
+		return
 	end
 
 	return nav

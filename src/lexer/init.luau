@@ -15,70 +15,69 @@
 	number, comment, and operator.
 ]]
 
-local language = require(script.language)
-local constants = require(script.constants)
+local Language = require(script.language)
+local Constants = require(script.constants)
 local Navigator = require(script.navigator)
 
-local keywords = language.keyword
-local builtins = language.builtin
-local libraries = language.libraries
+local keywords = Language.keyword
+local builtins = Language.builtin
+local libraries = Language.libraries
 
 local Lexer = {}
-Lexer.language = language
+Lexer.language = Language
 
 -- The constant tables rebind as locals so the scanner's hot loops read
 -- upvalues instead of chasing module fields.
-local BYTE_NEWLINE = constants.BYTE_NEWLINE
-local BYTE_RETURN = constants.BYTE_RETURN
-local BYTE_QUOTE = constants.BYTE_QUOTE
-local BYTE_APOSTROPHE = constants.BYTE_APOSTROPHE
-local BYTE_BACKTICK = constants.BYTE_BACKTICK
-local BYTE_BACKSLASH = constants.BYTE_BACKSLASH
-local BYTE_DASH = constants.BYTE_DASH
-local BYTE_PLUS = constants.BYTE_PLUS
-local BYTE_STAR = constants.BYTE_STAR
-local BYTE_SLASH = constants.BYTE_SLASH
-local BYTE_PERCENT = constants.BYTE_PERCENT
-local BYTE_CARET = constants.BYTE_CARET
-local BYTE_HASH = constants.BYTE_HASH
-local BYTE_TILDE = constants.BYTE_TILDE
-local BYTE_DOT = constants.BYTE_DOT
-local BYTE_COMMA = constants.BYTE_COMMA
-local BYTE_COLON = constants.BYTE_COLON
-local BYTE_SEMICOLON = constants.BYTE_SEMICOLON
-local BYTE_QUESTION = constants.BYTE_QUESTION
-local BYTE_PIPE = constants.BYTE_PIPE
-local BYTE_AMPERSAND = constants.BYTE_AMPERSAND
-local BYTE_UNDERSCORE = constants.BYTE_UNDERSCORE
-local BYTE_EQUALS = constants.BYTE_EQUALS
-local BYTE_OPEN_PAREN = constants.BYTE_OPEN_PAREN
-local BYTE_CLOSE_PAREN = constants.BYTE_CLOSE_PAREN
-local BYTE_OPEN_BRACE = constants.BYTE_OPEN_BRACE
-local BYTE_CLOSE_BRACE = constants.BYTE_CLOSE_BRACE
-local BYTE_OPEN_BRACKET = constants.BYTE_OPEN_BRACKET
-local BYTE_CLOSE_BRACKET = constants.BYTE_CLOSE_BRACKET
-local BYTE_LESS_THAN = constants.BYTE_LESS_THAN
-local BYTE_GREATER_THAN = constants.BYTE_GREATER_THAN
-local BYTE_AT = constants.BYTE_AT
-local BYTE_LOWER_E = constants.BYTE_LOWER_E
-local BYTE_UPPER_E = constants.BYTE_UPPER_E
-local BYTE_LOWER_U = constants.BYTE_LOWER_U
-local BYTE_LOWER_Z = constants.BYTE_LOWER_Z
-local IS_SPACE = constants.IS_SPACE
-local IS_DIGIT = constants.IS_DIGIT
-local IS_IDEN_START = constants.IS_IDEN_START
-local IS_IDEN_CHAR = constants.IS_IDEN_CHAR
-local IS_NUMBER_TAIL = constants.IS_NUMBER_TAIL
+local BYTE_NEWLINE = Constants.BYTE_NEWLINE
+local BYTE_RETURN = Constants.BYTE_RETURN
+local BYTE_QUOTE = Constants.BYTE_QUOTE
+local BYTE_APOSTROPHE = Constants.BYTE_APOSTROPHE
+local BYTE_BACKTICK = Constants.BYTE_BACKTICK
+local BYTE_BACKSLASH = Constants.BYTE_BACKSLASH
+local BYTE_DASH = Constants.BYTE_DASH
+local BYTE_PLUS = Constants.BYTE_PLUS
+local BYTE_STAR = Constants.BYTE_STAR
+local BYTE_SLASH = Constants.BYTE_SLASH
+local BYTE_PERCENT = Constants.BYTE_PERCENT
+local BYTE_CARET = Constants.BYTE_CARET
+local BYTE_HASH = Constants.BYTE_HASH
+local BYTE_TILDE = Constants.BYTE_TILDE
+local BYTE_DOT = Constants.BYTE_DOT
+local BYTE_COMMA = Constants.BYTE_COMMA
+local BYTE_COLON = Constants.BYTE_COLON
+local BYTE_SEMICOLON = Constants.BYTE_SEMICOLON
+local BYTE_QUESTION = Constants.BYTE_QUESTION
+local BYTE_PIPE = Constants.BYTE_PIPE
+local BYTE_AMPERSAND = Constants.BYTE_AMPERSAND
+local BYTE_UNDERSCORE = Constants.BYTE_UNDERSCORE
+local BYTE_EQUALS = Constants.BYTE_EQUALS
+local BYTE_OPEN_PAREN = Constants.BYTE_OPEN_PAREN
+local BYTE_CLOSE_PAREN = Constants.BYTE_CLOSE_PAREN
+local BYTE_OPEN_BRACE = Constants.BYTE_OPEN_BRACE
+local BYTE_CLOSE_BRACE = Constants.BYTE_CLOSE_BRACE
+local BYTE_OPEN_BRACKET = Constants.BYTE_OPEN_BRACKET
+local BYTE_CLOSE_BRACKET = Constants.BYTE_CLOSE_BRACKET
+local BYTE_LESS_THAN = Constants.BYTE_LESS_THAN
+local BYTE_GREATER_THAN = Constants.BYTE_GREATER_THAN
+local BYTE_AT = Constants.BYTE_AT
+local BYTE_LOWER_E = Constants.BYTE_LOWER_E
+local BYTE_UPPER_E = Constants.BYTE_UPPER_E
+local BYTE_LOWER_U = Constants.BYTE_LOWER_U
+local BYTE_LOWER_Z = Constants.BYTE_LOWER_Z
+local IS_SPACE = Constants.IS_SPACE
+local IS_DIGIT = Constants.IS_DIGIT
+local IS_IDEN_START = Constants.IS_IDEN_START
+local IS_IDEN_CHAR = Constants.IS_IDEN_CHAR
+local IS_NUMBER_TAIL = Constants.IS_NUMBER_TAIL
 
 -- How many bytes past a token's start the restart watermark reserves for
 -- the fixed peeks that never fold into maxRead, which are the one and two
--- byte reads in scanOperator, the dispatcher, and checkTypeNewline. The
--- deepest of those reaches one byte past the next token's start, from the
--- third byte read of a lone dot operator and the arrow peek after a line
--- break, and the second byte keeps a margin over them. A new peek reaching
--- deeper than this must fold its position into maxRead the way the long
--- lookahead helpers do, or hotswap reuse will silently trust tokens whose
--- lookahead crossed an edit.
+-- byte reads in scanOperator and the dispatcher. The deepest of those
+-- reaches one byte past the next token's start, from the third byte read of
+-- a lone dot operator, and the second byte keeps a margin over it. A new
+-- peek reaching deeper than this must fold its position into maxRead the
+-- way the long lookahead helpers and checkTypeNewline do, or hotswap reuse
+-- will silently trust tokens whose lookahead crossed an edit.
 local FIXED_PEEK_SLACK = 2
 
 --[[
@@ -208,28 +207,6 @@ local function scanSource(
 		aliasAwaitEquals = false
 	end
 
-	--[[
-		Ends the type context when a line break lands at its entry depth,
-		unless the last significant token promised a continuation or the next
-		line leads with a union bar, an intersection ampersand, or a return
-		arrow. No statement can start with those bytes, so a line leading with
-		one can only be continuing the type expression. The scanner sits on
-		the first byte after the whitespace run when this is called, which is
-		what makes the peek a plain read of the current position.
-	]]
-	local function checkTypeNewline()
-		if typeMode and depth <= typeEntryDepth and typeAngle == 0 and not typeContinues and not aliasAwaitEquals then
-			local nextByte = string.byte(source, index)
-			if nextByte == BYTE_PIPE or nextByte == BYTE_AMPERSAND then
-				return
-			end
-			if nextByte == BYTE_DASH and string.byte(source, index + 1) == BYTE_GREATER_THAN then
-				return
-			end
-			exitTypeMode()
-		end
-	end
-
 	local function skipSpace(position: number): number
 		while position <= size and IS_SPACE[string.byte(source, position)] do
 			position += 1
@@ -303,7 +280,18 @@ local function scanSource(
 	]]
 	local function skipInsignificant(position: number): number?
 		position = skipSpace(position)
-		while string.byte(source, position) == BYTE_DASH and string.byte(source, position + 1) == BYTE_DASH do
+		while string.byte(source, position) == BYTE_DASH do
+			-- Deciding whether the dash opens a comment reads the byte after
+			-- it, so that peek folds into maxRead even when the dash turns
+			-- out to be a lone operator and the walk stops here. Skipping the
+			-- fold would let a restart snapshot vouch for a decision that
+			-- depended on a byte the edit may have changed.
+			if position + 1 > maxRead then
+				maxRead = position + 1
+			end
+			if string.byte(source, position + 1) ~= BYTE_DASH then
+				break
+			end
 			local level = matchLongOpen(position + 2)
 			if level ~= nil then
 				local closer = "]" .. string.rep("=", level) .. "]"
@@ -334,6 +322,35 @@ local function scanSource(
 			end
 		end
 		return position
+	end
+
+	--[[
+		Ends the type context when a line break lands at its entry depth,
+		unless the last significant token promised a continuation or the next
+		significant byte is a union bar, an intersection ampersand, or a
+		return arrow. No statement can start with those bytes, so a line
+		leading with one can only be continuing the type expression. Comments
+		stay transparent to the type context, so the lookahead walks past
+		whitespace and whole comments, and every byte it reads folds into
+		maxRead so restart snapshots stay honest about the peek.
+	]]
+	local function checkTypeNewline()
+		if typeMode and depth <= typeEntryDepth and typeAngle == 0 and not typeContinues and not aliasAwaitEquals then
+			local nextSignificant = skipInsignificant(index)
+			if nextSignificant ~= nil then
+				local nextByte = string.byte(source, nextSignificant)
+				if nextByte == BYTE_PIPE or nextByte == BYTE_AMPERSAND then
+					return
+				end
+				-- A dash here is never a comment opener, since the walk above
+				-- stops only on significant bytes and already folded the byte
+				-- after the dash into maxRead while ruling a comment out.
+				if nextByte == BYTE_DASH and string.byte(source, nextSignificant + 1) == BYTE_GREATER_THAN then
+					return
+				end
+			end
+			exitTypeMode()
+		end
 	end
 
 	--[[
@@ -611,11 +628,11 @@ local function scanSource(
 		the end of the source when unfinished, emitting the given kind.
 	]]
 	local function scanLongBracket(kind: string, start: number, level: number, bodyStart: number)
-		typeofArmed = false
 		-- Comments stay transparent to the type context so an annotation can
-		-- carry past one, while a long string ends any continuation the same
-		-- way a quoted string does.
+		-- carry past one and typeof stays armed for its paren, while a long
+		-- string ends any continuation the same way a quoted string does.
 		if kind == "string" then
+			typeofArmed = false
 			typeContinues = false
 			typeExpectsWord = false
 		end
@@ -643,7 +660,6 @@ local function scanSource(
 		runs through its newline.
 	]]
 	local function scanComment()
-		typeofArmed = false
 		local start = index
 		local level = matchLongOpen(index + 2)
 		if level ~= nil then
@@ -1003,7 +1019,13 @@ function Lexer.scanRestartable(
 			-- always pass since the scanner only yields string pairs, while
 			-- the snapshot values are missing on most tokens.
 			local success, kind, content, restartDepth, watermark = coroutine.resume(thread)
-			if success and type(kind) == "string" and type(content) == "string" then
+			if not success then
+				-- A failed resume carries the scan's error in the kind slot,
+				-- and it propagates rather than reading as a clean end of
+				-- the source.
+				error(kind, 0)
+			end
+			if type(kind) == "string" and type(content) == "string" then
 				return kind,
 					content,
 					if type(restartDepth) == "number" then restartDepth else nil,
@@ -1046,9 +1068,12 @@ end
 
 --[[
 	Builds a token navigator supporting non-sequential reads over a source,
-	caching scanned tokens so earlier ones can be revisited.
+	caching scanned tokens so earlier ones can be revisited. The result
+	erases to any here because the navigator table carries more members than
+	the public TokenNavigator contract and the old solver has no width
+	subtyping to bridge them.
 ]]
-function Lexer.navigator()
+function Lexer.navigator(): any
 	return Navigator.new(Lexer.scanRestartable)
 end
 

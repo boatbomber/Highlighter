@@ -255,30 +255,13 @@ print(string.format("  %.1fx faster than the full rescan build", rescanBuildBest
 local skipBuildBest = summarize(
 	"buildLines skipping lines the hotswap kept, tail edit",
 	measure(scannedNavigator(tailOld), function(nav)
-		-- This mirrors label population's keystroke path, walking the
-		-- newlines inside the reused bytes to find the first dirty line and
-		-- building only from there.
-		local reusedBytes = nav:HotswapSource(tailNew)
-		local startLine = 1
-		local buildFromByte = 1
-		local newlineAt = string.find(tailNew, "\n", 1, true)
-		while newlineAt ~= nil and newlineAt <= reusedBytes do
-			startLine += 1
-			buildFromByte = newlineAt + 1
-			newlineAt = string.find(tailNew, "\n", newlineAt + 1, true)
-		end
-		local trimHead = nav:SeekToByte(buildFromByte)
+		-- This times the exact resume helper label population calls per
+		-- keystroke, so the benchmark cannot drift from the production path.
+		local tokens, startLine = RichText.resumeTokens(nav, tailNew, true)
 		RichText.buildLines({
 			src = tailNew,
 			lexer = Lexer,
-			tokens = function()
-				local kind, content = nav:Next()
-				if trimHead > 0 and kind ~= nil then
-					content = string.sub(content, trimHead + 1)
-					trimHead = 0
-				end
-				return kind, content
-			end,
+			tokens = tokens,
 			startLine = startLine,
 			alwaysTagText = false,
 			onLine = discardLine,

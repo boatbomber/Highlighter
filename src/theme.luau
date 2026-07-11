@@ -138,8 +138,9 @@ end
 
 --[[
 	Applies the Studio script editor colors and subscribes to theme changes,
-	invoking the given callback whenever the colors update. Returns whether the
-	Studio settings were reachable, which is only true inside a Studio plugin.
+	invoking the given callback whenever the colors update, the initial apply
+	included. Returns whether the Studio settings were reachable, which is
+	only true inside a Studio plugin.
 ]]
 function Theme.matchStudioSettings(refreshCallback: () -> ()): boolean
 	local success = pcall(function()
@@ -170,6 +171,12 @@ function Theme.matchStudioSettings(refreshCallback: () -> ()): boolean
 			refreshCallback()
 		end)
 	end)
+	-- The initial apply reports through the same callback as later theme
+	-- changes, and it runs outside the pcall so a callback error propagates
+	-- instead of reading as unreachable settings.
+	if success then
+		refreshCallback()
+	end
 	return success
 end
 

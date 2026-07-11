@@ -13,7 +13,7 @@ type LanguageTable = {
 	libraries: { [string]: { [string]: string } },
 }
 
-local language: LanguageTable = {
+local Language: LanguageTable = {
 	keyword = {
 		["and"] = "keyword",
 		["break"] = "keyword",
@@ -44,7 +44,7 @@ local language: LanguageTable = {
 	},
 
 	builtin = {
-		-- Luau Functions
+		-- These are the global functions Luau itself provides.
 		["assert"] = "function",
 		["error"] = "function",
 		["getfenv"] = "function",
@@ -68,14 +68,14 @@ local language: LanguageTable = {
 		["unpack"] = "function",
 		["xpcall"] = "function",
 
-		-- Luau Functions (Deprecated)
+		-- Luau deprecated collectgarbage but still exposes it.
 		["collectgarbage"] = "function",
 
-		-- Luau Variables
+		-- Luau exposes these variables globally.
 		["_G"] = "table",
 		["_VERSION"] = "string",
 
-		-- Luau Tables
+		-- These tables are Luau's standard libraries.
 		["bit32"] = "table",
 		["buffer"] = "table",
 		["coroutine"] = "table",
@@ -87,7 +87,7 @@ local language: LanguageTable = {
 		["utf8"] = "table",
 		["vector"] = "table",
 
-		-- Roblox Functions
+		-- Roblox adds these global functions.
 		["DebuggerManager"] = "function",
 		["delay"] = "function",
 		["gcinfo"] = "function",
@@ -101,7 +101,7 @@ local language: LanguageTable = {
 		["wait"] = "function",
 		["warn"] = "function",
 
-		-- Roblox Functions (Deprecated)
+		-- Roblox deprecated these functions but still exposes them.
 		["Delay"] = "function",
 		["ElapsedTime"] = "function",
 		["elapsedTime"] = "function",
@@ -114,18 +114,18 @@ local language: LanguageTable = {
 		["Wait"] = "function",
 		["ypcall"] = "function",
 
-		-- Roblox Variables
+		-- Roblox exposes these Instances as globals.
 		["game"] = "Instance",
 		["plugin"] = "Instance",
 		["script"] = "Instance",
 		["shared"] = "Instance",
 		["workspace"] = "Instance",
 
-		-- Roblox Variables (Deprecated)
+		-- Roblox deprecated these globals but still exposes them.
 		["Game"] = "Instance",
 		["Workspace"] = "Instance",
 
-		-- Roblox Tables
+		-- These tables build Roblox data types.
 		["Axes"] = "table",
 		["BrickColor"] = "table",
 		["CatalogSearchParams"] = "table",
@@ -166,7 +166,7 @@ local language: LanguageTable = {
 
 	libraries = {
 
-		-- Luau Libraries
+		-- These are the member tables of Luau's standard libraries.
 		bit32 = {
 			arshift = "function",
 			band = "function",
@@ -355,7 +355,7 @@ local language: LanguageTable = {
 			zero = "vector",
 		},
 
-		-- Roblox Libraries
+		-- These are the member tables of the Roblox globals above.
 		Axes = {
 			new = "function",
 		},
@@ -566,7 +566,7 @@ local language: LanguageTable = {
 
 -- The Enum library members come from the engine,
 -- so this fill is pcalled to silently skip in Lune/Lute/etc.
-local enumLibraryTable = language.libraries.Enum
+local enumLibraryTable = Language.libraries.Enum
 
 pcall(function()
 	for _, enum in ipairs(Enum:GetEnums()) do
@@ -574,4 +574,4 @@ pcall(function()
 	end
 end)
 
-return language
+return Language

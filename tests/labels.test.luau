@@ -12,6 +12,7 @@ local expect = JestGlobals.expect
 local afterEach = JestGlobals.afterEach
 
 local Highlighter = require(Packages:WaitForChild("Highlighter"))
+local Spies = require(script.Parent:WaitForChild("spies"))
 
 local createdGuis: { ScreenGui } = {}
 
@@ -53,6 +54,15 @@ local function getLineLabels(textObject: Instance): { TextLabel }
 		end
 	end
 	return labels
+end
+
+--[[
+	Reports whether the given line's label exists and its rich text carries
+	the given color as a hex string.
+]]
+local function lineHasColor(textObject: Instance, lineNumber: number, color: Color3): boolean
+	local lineLabel = getLineLabels(textObject)[lineNumber]
+	return lineLabel ~= nil and string.find(lineLabel.Text, color:ToHex(), 1, true) ~= nil
 end
 
 --[[
@@ -115,9 +125,7 @@ describe("highlight", function()
 		local textObject = makeTextObject("local x = 1")
 		Highlighter.highlight({ textObject = textObject })
 
-		local keywordHex = Highlighter.getTokenColor("keyword"):ToHex()
-		local lineLabel = getLineLabels(textObject)[1]
-		expect(string.find(lineLabel.Text, keywordHex, 1, true) ~= nil).toBe(true)
+		expect(lineHasColor(textObject, 1, Highlighter.getTokenColor("keyword"))).toBe(true)
 	end)
 
 	it("leaves text in the default color untagged", function()
@@ -150,18 +158,22 @@ describe("highlight", function()
 
 		expect(textObject.Text).toBe("print(1)")
 
-		local builtinHex = Highlighter.getTokenColor("builtin"):ToHex()
-		local lineLabel = getLineLabels(textObject)[1]
-		expect(string.find(lineLabel.Text, builtinHex, 1, true) ~= nil).toBe(true)
+		expect(lineHasColor(textObject, 1, Highlighter.getTokenColor("builtin"))).toBe(true)
+	end)
+
+	it("clears the displayed text when first highlighted with an empty source", function()
+		local textObject = makeTextObject("print(1)")
+		Highlighter.highlight({ textObject = textObject, src = "" })
+
+		expect(textObject.Text).toBe("")
+		expect(#getLineLabels(textObject)).toBe(0)
 	end)
 
 	it("highlights TextBoxes", function()
 		local textObject = makeTextObject("local x = 1", "TextBox")
 		Highlighter.highlight({ textObject = textObject })
 
-		local keywordHex = Highlighter.getTokenColor("keyword"):ToHex()
-		local lineLabel = getLineLabels(textObject)[1]
-		expect(string.find(lineLabel.Text, keywordHex, 1, true) ~= nil).toBe(true)
+		expect(lineHasColor(textObject, 1, Highlighter.getTokenColor("keyword"))).toBe(true)
 	end)
 
 	it("returns the existing cleanup when highlighting twice", function()
@@ -188,10 +200,8 @@ describe("automatic updates", function()
 
 		textObject.Text = "print(1)"
 
-		local builtinHex = Highlighter.getTokenColor("builtin"):ToHex()
 		local updated = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[1]
-			return lineLabel ~= nil and string.find(lineLabel.Text, builtinHex, 1, true) ~= nil
+			return lineHasColor(textObject, 1, Highlighter.getTokenColor("builtin"))
 		end)
 		expect(updated).toBe(true)
 	end)
@@ -204,10 +214,8 @@ describe("automatic updates", function()
 		-- while changing every token on it.
 		textObject.Text = "--[[ a = 1\nprint(2)"
 
-		local commentHex = Highlighter.getTokenColor("comment"):ToHex()
 		local updated = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[2]
-			return lineLabel ~= nil and string.find(lineLabel.Text, commentHex, 1, true) ~= nil
+			return lineHasColor(textObject, 2, Highlighter.getTokenColor("comment"))
 		end)
 		expect(updated).toBe(true)
 	end)
@@ -251,10 +259,8 @@ describe("automatic updates", function()
 
 		textObject.Text = "print(1)"
 
-		local builtinHex = Highlighter.getTokenColor("builtin"):ToHex()
 		local updated = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[1]
-			return lineLabel ~= nil and string.find(lineLabel.Text, builtinHex, 1, true) ~= nil
+			return lineHasColor(textObject, 1, Highlighter.getTokenColor("builtin"))
 		end)
 		expect(updated).toBe(true)
 	end)
@@ -263,12 +269,12 @@ describe("automatic updates", function()
 		local textObject = makeTextObject("myFunc(1)")
 		Highlighter.highlight({ textObject = textObject })
 
-		local customHex = Highlighter.getTokenColor("custom"):ToHex()
-		expect(string.find(getLineLabels(textObject)[1].Text, customHex, 1, true)).toBe(nil)
+		local customColor = Highlighter.getTokenColor("custom")
+		expect(lineHasColor(textObject, 1, customColor)).toBe(false)
 
 		Highlighter.highlight({ textObject = textObject, customLang = { myFunc = "custom" } })
 
-		expect(string.find(getLineLabels(textObject)[1].Text, customHex, 1, true) ~= nil).toBe(true)
+		expect(lineHasColor(textObject, 1, customColor)).toBe(true)
 	end)
 
 	it("applies textObject font and size changes to the labels", function()
@@ -303,16 +309,72 @@ describe("automatic updates", function()
 
 		textObject.Text = "print(1)"
 
-		local builtinHex = Highlighter.getTokenColor("builtin"):ToHex()
 		local healed = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[1]
-			return lineLabel ~= nil and string.find(lineLabel.Text, builtinHex, 1, true) ~= nil
+			return lineHasColor(textObject, 1, Highlighter.getTokenColor("builtin"))
 		end)
 		expect(healed).toBe(true)
 
 		-- Cleanup removes the recreated folder rather than the stale original.
 		cleanup()
 		expect(textObject:FindFirstChild("SyntaxHighlights")).toBe(nil)
+	end)
+
+	it("heals a missing folder on a repeated highlight call", function()
+		local textObject = makeTextObject("local x = 1")
+		Highlighter.highlight({ textObject = textObject })
+
+		-- Nothing about the text changes here, so the repeated call has to
+		-- notice the missing folder on its own rather than ride a text diff.
+		local folder = textObject:FindFirstChild("SyntaxHighlights") :: Instance
+		folder:Destroy()
+
+		Highlighter.highlight({ textObject = textObject })
+
+		expect(lineHasColor(textObject, 1, Highlighter.getTokenColor("keyword"))).toBe(true)
+	end)
+
+	it("renormalizes text that collapses to the cached source", function()
+		local textObject = makeTextObject("a    b")
+		Highlighter.highlight({ textObject = textObject })
+
+		-- The tab normalizes back to the cached four spaces, but the raw
+		-- text on the object still has to be rewritten or it renders a
+		-- literal tab under labels built for spaces.
+		textObject.Text = "a\tb"
+
+		local renormalized = waitUntil(function()
+			return textObject.Text == "a    b"
+		end)
+		expect(renormalized).toBe(true)
+	end)
+
+	it("recreates an individually destroyed line label", function()
+		local textObject = makeTextObject("local a = 1\nprint(1)\nreturn a")
+		Highlighter.highlight({ textObject = textObject })
+
+		-- An edit on the destroyed label's own line rebuilds that line, and
+		-- the rebuild has to notice the dead label instead of writing into
+		-- it silently.
+		local secondLabel = getLineLabels(textObject)[2] :: Instance
+		secondLabel:Destroy()
+		textObject.Text = "local a = 1\nprint(2)\nreturn a"
+
+		local healed = waitUntil(function()
+			local lineLabel = getLineLabels(textObject)[2]
+			return lineLabel ~= nil and string.find(lineLabel.Text, ">2<", 1, true) ~= nil
+		end)
+		expect(healed).toBe(true)
+
+		-- Refresh emits every line, so it repairs a dead label even when no
+		-- edit touches its line.
+		local firstLabel = getLineLabels(textObject)[1] :: Instance
+		firstLabel:Destroy()
+		Highlighter.refresh()
+
+		local repaired = waitUntil(function()
+			return lineHasColor(textObject, 1, Highlighter.getTokenColor("keyword"))
+		end)
+		expect(repaired).toBe(true)
 	end)
 
 	it("starts an empty source with no labels and fills in once text arrives", function()
@@ -332,33 +394,65 @@ end)
 describe("incremental rescans", function()
 	local HighlighterPackage = Packages:WaitForChild("Highlighter")
 	local LexerModule = require(HighlighterPackage:WaitForChild("lexer"))
-	local NavigatorModule = require(HighlighterPackage:WaitForChild("lexer"):WaitForChild("navigator"))
 	local RichTextModule = require(HighlighterPackage:WaitForChild("richtext"))
 
 	--[[
-		Builds a lexer whose navigator records where every scan begins, which
-		lets a test tell a resumed scan from a full one. The returned list gets
-		one entry per scan the labels actually ran.
+		Wraps RichText.sanitize to record every token content the builder
+		passes through it for the duration of a callback, returning the list.
+		buildLines reads sanitize through the module table on every call,
+		which is what makes the spy visible, and the pcall puts the real
+		function back even when the callback fails.
 	]]
-	local function makeSpyLexer()
-		local scanStarts: { number } = {}
-		local spyLexer = {
-			scan = LexerModule.scan,
-			scanEach = LexerModule.scanEach,
-			navigator = function()
-				return NavigatorModule.new(function(src: string, startIndex: number?, seed)
-					table.insert(scanStarts, startIndex or 1)
-					return LexerModule.scanRestartable(src, startIndex, seed)
-				end)
-			end,
-		}
-		return spyLexer, scanStarts
+	local function recordSanitizedContents(callback: () -> ()): { string }
+		local realSanitize = RichTextModule.sanitize
+		local sanitized: { string } = {}
+		RichTextModule.sanitize = function(text: string): string
+			table.insert(sanitized, text)
+			return realSanitize(text)
+		end
+		local ok, err = pcall(callback)
+		RichTextModule.sanitize = realSanitize
+		if not ok then
+			error(err)
+		end
+		return sanitized
+	end
+
+	--[[
+		Highlights oldSource, edits it to newSource, and asserts the
+		incremental rebuild's labels match a second object highlighted from
+		newSource through a lexer with no navigator factory, which keeps the
+		full-rescan path and makes it the ground truth.
+	]]
+	local function expectMatchesFullRescan(oldSource: string, newSource: string)
+		local textObject = makeTextObject(oldSource)
+		Highlighter.highlight({ textObject = textObject })
+		textObject.Text = newSource
+
+		local reference = makeTextObject(newSource)
+		Highlighter.highlight({
+			textObject = reference,
+			lexer = { scan = LexerModule.scan, scanEach = LexerModule.scanEach },
+		})
+		local referenceLabels = getLineLabels(reference)
+
+		local matched = waitUntil(function()
+			local labels = getLineLabels(textObject)
+			for lineNumber, referenceLabel in referenceLabels do
+				local lineLabel = labels[lineNumber]
+				if lineLabel == nil or lineLabel.Text ~= referenceLabel.Text then
+					return false
+				end
+			end
+			return true
+		end)
+		expect(matched).toBe(true)
 	end
 
 	it("resumes the scan mid source when text is edited at the end", function()
 		local body = "local a = 1\nlocal b = 2\nlocal c = 3\n"
 		local textObject = makeTextObject(body .. "print(1)")
-		local spyLexer, scanStarts = makeSpyLexer()
+		local spyLexer, scanStarts = Spies.lexerWithScanSpy()
 		Highlighter.highlight({ textObject = textObject, lexer = spyLexer })
 
 		expect(#scanStarts).toBe(1)
@@ -380,7 +474,7 @@ describe("incremental rescans", function()
 
 	it("drains cached tokens with no rescan when only customLang changes", function()
 		local textObject = makeTextObject("myFunc(1)")
-		local spyLexer, scanStarts = makeSpyLexer()
+		local spyLexer, scanStarts = Spies.lexerWithScanSpy()
 		Highlighter.highlight({ textObject = textObject, lexer = spyLexer })
 
 		expect(#scanStarts).toBe(1)
@@ -391,9 +485,40 @@ describe("incremental rescans", function()
 			customLang = { myFunc = "custom" },
 		})
 
-		local customHex = Highlighter.getTokenColor("custom"):ToHex()
-		expect(string.find(getLineLabels(textObject)[1].Text, customHex, 1, true) ~= nil).toBe(true)
+		expect(lineHasColor(textObject, 1, Highlighter.getTokenColor("custom"))).toBe(true)
 		expect(#scanStarts).toBe(1)
+	end)
+
+	it("falls back to a full scan for a navigator missing the resume contract", function()
+		-- This navigator mirrors the shape the library shipped before the
+		-- resume contract existed: HotswapSource returns nothing and there
+		-- is no SeekToByte. A custom lexer carrying one must render through
+		-- the plain scanning path instead of crashing.
+		local oldShapeNavigator = {
+			SetSource = function() end,
+			HotswapSource = function() end,
+			Next = function() end,
+			Peek = function() end,
+			Destroy = function() end,
+		}
+		local oldShapeLexer = {
+			scan = LexerModule.scan,
+			scanEach = LexerModule.scanEach,
+			navigator = function()
+				return oldShapeNavigator
+			end,
+		}
+		local textObject = makeTextObject("local a = 1\nprint(1)")
+		Highlighter.highlight({ textObject = textObject, lexer = oldShapeLexer })
+
+		expect(lineHasColor(textObject, 1, Highlighter.getTokenColor("keyword"))).toBe(true)
+
+		textObject.Text = "local a = 1\nprint(2)"
+		local updated = waitUntil(function()
+			local lastLabel = getLineLabels(textObject)[2]
+			return lastLabel ~= nil and string.find(lastLabel.Text, ">2<", 1, true) ~= nil
+		end)
+		expect(updated).toBe(true)
 	end)
 
 	it("skips rebuilding lines the edit provably left alone", function()
@@ -401,22 +526,14 @@ describe("incremental rescans", function()
 		local textObject = makeTextObject(body .. "print(1)")
 		Highlighter.highlight({ textObject = textObject })
 
-		-- Wrapping sanitize records which token contents pass through the
-		-- builder, since buildLines reads it through the module table on
-		-- every call.
-		local realSanitize = RichTextModule.sanitize
-		local sanitized: { string } = {}
-		RichTextModule.sanitize = function(text: string): string
-			table.insert(sanitized, text)
-			return realSanitize(text)
-		end
-
-		textObject.Text = body .. "print(2)"
-		local updated = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[4]
-			return lineLabel ~= nil and string.find(lineLabel.Text, ">2<", 1, true) ~= nil
+		local updated = false
+		local sanitized = recordSanitizedContents(function()
+			textObject.Text = body .. "print(2)"
+			updated = waitUntil(function()
+				local lineLabel = getLineLabels(textObject)[4]
+				return lineLabel ~= nil and string.find(lineLabel.Text, ">2<", 1, true) ~= nil
+			end)
 		end)
-		RichTextModule.sanitize = realSanitize
 		expect(updated).toBe(true)
 
 		-- The rebuild reaches back at most into the edited line, so the
@@ -447,8 +564,7 @@ describe("incremental rescans", function()
 		local newColor = Color3.fromRGB(210, 20, 20)
 		Highlighter.setTokenColors({ keyword = newColor })
 		local recolored = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[1]
-			return lineLabel ~= nil and string.find(lineLabel.Text, newColor:ToHex(), 1, true) ~= nil
+			return lineHasColor(textObject, 1, newColor)
 		end)
 		Highlighter.setTokenColors({ keyword = savedKeyword })
 		expect(recolored).toBe(true)
@@ -465,10 +581,8 @@ describe("incremental rescans", function()
 		-- loss means every label has to rebuild from scratch.
 		textObject.Text = "local a = 1\nprint(2)"
 
-		local keywordHex = Highlighter.getTokenColor("keyword"):ToHex()
 		local healed = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[1]
-			return lineLabel ~= nil and string.find(lineLabel.Text, keywordHex, 1, true) ~= nil
+			return lineHasColor(textObject, 1, Highlighter.getTokenColor("keyword"))
 		end)
 		expect(healed).toBe(true)
 	end)
@@ -498,59 +612,12 @@ describe("incremental rescans", function()
 		-- so the edited line starts partway through a kept token and the
 		-- rebuild has to trim the head off it.
 		local head = "do\n    local a = [[one\ntwo]]\n"
-		local oldSource = head .. "    print(1)\nend"
-		local newSource = head .. "    print(2)\nend"
-		local textObject = makeTextObject(oldSource)
-		Highlighter.highlight({ textObject = textObject })
-		textObject.Text = newSource
-
-		local reference = makeTextObject(newSource)
-		Highlighter.highlight({
-			textObject = reference,
-			lexer = { scan = LexerModule.scan, scanEach = LexerModule.scanEach },
-		})
-		local referenceLabels = getLineLabels(reference)
-
-		local matched = waitUntil(function()
-			local labels = getLineLabels(textObject)
-			for lineNumber, referenceLabel in referenceLabels do
-				local lineLabel = labels[lineNumber]
-				if lineLabel == nil or lineLabel.Text ~= referenceLabel.Text then
-					return false
-				end
-			end
-			return true
-		end)
-		expect(matched).toBe(true)
+		expectMatchesFullRescan(head .. "    print(1)\nend", head .. "    print(2)\nend")
 	end)
 
 	it("produces the same labels as a full rescan after an end edit", function()
 		local oldSource = "local a = 1\nprint(`{a} items`)\nreturn a"
-		local newSource = "local a = 1\nprint(`{a} items`)\nreturn a + 1"
-		local textObject = makeTextObject(oldSource)
-		Highlighter.highlight({ textObject = textObject })
-		textObject.Text = newSource
-
-		-- A lexer with no navigator factory keeps the full-rescan path, which
-		-- makes this second object the ground truth to compare against.
-		local reference = makeTextObject(newSource)
-		Highlighter.highlight({
-			textObject = reference,
-			lexer = { scan = LexerModule.scan, scanEach = LexerModule.scanEach },
-		})
-		local referenceLabels = getLineLabels(reference)
-
-		local matched = waitUntil(function()
-			local labels = getLineLabels(textObject)
-			for lineNumber, referenceLabel in referenceLabels do
-				local lineLabel = labels[lineNumber]
-				if lineLabel == nil or lineLabel.Text ~= referenceLabel.Text then
-					return false
-				end
-			end
-			return true
-		end)
-		expect(matched).toBe(true)
+		expectMatchesFullRescan(oldSource, oldSource .. " + 1")
 	end)
 end)
 
@@ -654,9 +721,8 @@ describe("refresh", function()
 
 		Highlighter.refresh()
 
-		local keywordHex = Highlighter.getTokenColor("keyword"):ToHex()
 		local rebuilt = waitUntil(function()
-			return string.find(lineLabel.Text, keywordHex, 1, true) ~= nil
+			return lineHasColor(textObject, 1, Highlighter.getTokenColor("keyword"))
 		end)
 		expect(rebuilt).toBe(true)
 	end)
@@ -677,6 +743,24 @@ describe("refresh", function()
 		Highlighter.setTokenColors({ background = savedBackground, iden = savedIden })
 	end)
 
+	it("applies a new iden color to the labels themselves", function()
+		local savedIden = Highlighter.getTokenColor("iden")
+		local textObject = makeTextObject("identifier")
+		Highlighter.highlight({ textObject = textObject })
+
+		-- Untagged text renders in the label's own color, so the theme
+		-- change has to reach TextColor3 and not just the font tags.
+		local newIden = Color3.fromRGB(7, 8, 9)
+		Highlighter.setTokenColors({ iden = newIden })
+
+		local lineLabel = getLineLabels(textObject)[1]
+		local recolored = waitUntil(function()
+			return lineLabel.TextColor3:ToHex() == newIden:ToHex()
+		end)
+		Highlighter.setTokenColors({ iden = savedIden })
+		expect(recolored).toBe(true)
+	end)
+
 	it("applies new token colors to existing labels", function()
 		local savedKeyword = Highlighter.getTokenColor("keyword")
 		local textObject = makeTextObject("local x = 1")
@@ -686,8 +770,7 @@ describe("refresh", function()
 		Highlighter.setTokenColors({ keyword = newColor })
 
 		local recolored = waitUntil(function()
-			local lineLabel = getLineLabels(textObject)[1]
-			return lineLabel ~= nil and string.find(lineLabel.Text, newColor:ToHex(), 1, true) ~= nil
+			return lineHasColor(textObject, 1, newColor)
 		end)
 		Highlighter.setTokenColors({ keyword = savedKeyword })
 

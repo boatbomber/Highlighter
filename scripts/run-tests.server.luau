@@ -36,6 +36,15 @@ if status ~= "Resolved" then
 end
 
 local runResults = result.results
+
+-- Jest already rejects a project that matches zero test files, so this
+-- guard exists for config drift that would make an empty run resolve, like
+-- a future passWithNoTests option. A suite count of zero can never be a
+-- passing state for this repo.
+if runResults.numTotalTests == 0 then
+	error("Jest discovered zero tests, so the run proves nothing")
+end
+
 if runResults.numFailedTestSuites > 0 or runResults.numFailedTests > 0 then
 	error(`{runResults.numFailedTests} failed tests across {runResults.numFailedTestSuites} failed suites`)
 end
