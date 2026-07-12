@@ -51,7 +51,7 @@ local function getTextBounds(textObject: types.TextObject, numLines: number): Ve
 
 	local textBounds = textObject.TextBounds
 	if (textBounds.Y ~= textBounds.Y) or (textBounds.Y < 1) then
-		return Vector2.new(0, textObject.TextSize * numLines)
+		return Vector2.new(0, (textObject.TextSize * textObject.LineHeight) * numLines)
 	end
 	return textBounds
 end
