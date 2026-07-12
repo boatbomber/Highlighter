@@ -24,8 +24,7 @@ function Highlighter.highlight(props: types.HighlightProps): () -> ()
 ```
 
 Highlights the given textObject with the given props and returns a cleanup function.
-Highlighting will automatically update when needed, so the cleanup function will disconnect
-those connections and remove all labels.
+Highlighting will automatically update when needed, so the cleanup function will disconnect those connections and remove all labels.
 
 ```Lua
 function Highlighter.buildRichTextLines(props: types.BuildRichTextLinesProps): { string }
@@ -65,7 +64,7 @@ Does nothing when not run in a Studio plugin.
 Highlighter.defaultLexer: Lexer
 ```
 
-The built-in Luau lexer, used whenever props don't provide one.
+The read-only built-in Luau lexer, used whenever props don't provide one. Assigning to `Highlighter.defaultLexer` is not supported, it is read-only.
 Its scanning flow is documented in [docs/lexer.md](docs/lexer.md).
 Its `navigator` factory is what lets `highlight` reuse cached tokens across edits, so typing near the end of a source only rescans and rebuilds the tail lines.
 A custom lexer without one still works and pays a full scan per update, and a navigator missing any part of the `TokenNavigator` contract is ignored the same way rather than crashing.
@@ -119,6 +118,8 @@ type Lexer = {
     navigator: (() -> TokenNavigator)?,
 }
 ```
+
+`customLang` is treated as immutable while it is in use by a highlighted TextObject. To change its mappings, pass a new table to `highlight`, or call `highlight` with `forceUpdate = true` after changing the existing table.
 
 ## Simple Example
 
