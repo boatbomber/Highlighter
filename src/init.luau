@@ -64,4 +64,4 @@ function Highlighter.matchStudioSettings(): ()
 	Theme.matchStudioSettings(Labels.refresh)
 end
 
-return Highlighter
+return table.freeze(Highlighter)
