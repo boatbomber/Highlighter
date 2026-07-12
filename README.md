@@ -8,7 +8,7 @@ Highlighter renders syntax highlighted Luau code in Roblox using RichText and a 
 
 ```toml
 [dependencies]
-Highlighter = "boatbomber/highlighter@0.10.0"
+Highlighter = "boatbomber/highlighter@0.11.0"
 ```
 
 ### Roblox model
