@@ -1,4 +1,19 @@
-local language = {
+--!strict
+
+--[[
+	The word tables the scanner classifies identifiers with. Keywords, global
+	builtins, and library members all live here.
+]]
+
+-- The indexer annotations let consumers look words up by arbitrary strings,
+-- and let the Enum fill below add members the literal does not list.
+type LanguageTable = {
+	keyword: { [string]: string },
+	builtin: { [string]: string },
+	libraries: { [string]: { [string]: string } },
+}
+
+local Language: LanguageTable = {
 	keyword = {
 		["and"] = "keyword",
 		["break"] = "keyword",
@@ -29,7 +44,7 @@ local language = {
 	},
 
 	builtin = {
-		-- Luau Functions
+		-- These are the global functions Luau itself provides.
 		["assert"] = "function",
 		["error"] = "function",
 		["getfenv"] = "function",
@@ -53,14 +68,14 @@ local language = {
 		["unpack"] = "function",
 		["xpcall"] = "function",
 
-		-- Luau Functions (Deprecated)
+		-- Luau deprecated collectgarbage but still exposes it.
 		["collectgarbage"] = "function",
 
-		-- Luau Variables
+		-- Luau exposes these variables globally.
 		["_G"] = "table",
 		["_VERSION"] = "string",
 
-		-- Luau Tables
+		-- These tables are Luau's standard libraries.
 		["bit32"] = "table",
 		["buffer"] = "table",
 		["coroutine"] = "table",
@@ -72,7 +87,7 @@ local language = {
 		["utf8"] = "table",
 		["vector"] = "table",
 
-		-- Roblox Functions
+		-- Roblox adds these global functions.
 		["DebuggerManager"] = "function",
 		["delay"] = "function",
 		["gcinfo"] = "function",
@@ -86,7 +101,7 @@ local language = {
 		["wait"] = "function",
 		["warn"] = "function",
 
-		-- Roblox Functions (Deprecated)
+		-- Roblox deprecated these functions but still exposes them.
 		["Delay"] = "function",
 		["ElapsedTime"] = "function",
 		["elapsedTime"] = "function",
@@ -99,18 +114,18 @@ local language = {
 		["Wait"] = "function",
 		["ypcall"] = "function",
 
-		-- Roblox Variables
+		-- Roblox exposes these Instances as globals.
 		["game"] = "Instance",
 		["plugin"] = "Instance",
 		["script"] = "Instance",
 		["shared"] = "Instance",
 		["workspace"] = "Instance",
 
-		-- Roblox Variables (Deprecated)
+		-- Roblox deprecated these globals but still exposes them.
 		["Game"] = "Instance",
 		["Workspace"] = "Instance",
 
-		-- Roblox Tables
+		-- These tables build Roblox data types.
 		["Axes"] = "table",
 		["BrickColor"] = "table",
 		["CatalogSearchParams"] = "table",
@@ -151,7 +166,7 @@ local language = {
 
 	libraries = {
 
-		-- Luau Libraries
+		-- These are the member tables of Luau's standard libraries.
 		bit32 = {
 			arshift = "function",
 			band = "function",
@@ -175,6 +190,8 @@ local language = {
 			fill = "function",
 			fromstring = "function",
 			len = "function",
+			readbits = "function",
+			writebits = "function",
 			readf32 = "function",
 			readf64 = "function",
 			readi8 = "function",
@@ -235,8 +252,10 @@ local language = {
 			fmod = "function",
 			frexp = "function",
 			ldexp = "function",
+			lerp = "function",
 			log10 = "function",
 			log = "function",
+			map = "function",
 			max = "function",
 			min = "function",
 			modf = "function",
@@ -336,7 +355,7 @@ local language = {
 			zero = "vector",
 		},
 
-		-- Roblox Libraries
+		-- These are the member tables of the Roblox globals above.
 		Axes = {
 			new = "function",
 		},
@@ -545,12 +564,14 @@ local language = {
 	},
 }
 
--- Filling up language.libraries.Enum table
-local enumLibraryTable = language.libraries.Enum
+-- The Enum library members come from the engine,
+-- so this fill is pcalled to silently skip in Lune/Lute/etc.
+local enumLibraryTable = Language.libraries.Enum
 
-for _, enum in ipairs(Enum:GetEnums()) do
-	--TODO: Remove tostring from here once there is a better way to get the name of an Enum
-	enumLibraryTable[tostring(enum)] = "Enum"
-end
+pcall(function()
+	for _, enum in ipairs(Enum:GetEnums()) do
+		enumLibraryTable[tostring(enum)] = "Enum"
+	end
+end)
 
-return language
+return Language

@@ -1,6 +1,6 @@
 [package]
 name = "boatbomber/highlighter"
-description = "RichText highlighting Lua code with a pure Lua lexer"
+description = "RichText highlighting Luau code with a pure Luau lexer"
 version = "0.10.0"
 license = "MIT"
 authors = ["boatbomber (https://boatbomber.com)"]
@@ -8,3 +8,7 @@ registry = "https://github.com/upliftgames/wally-index"
 realm = "shared"
 include = ["src", "src/**", "wally.toml", "wally.lock", "default.project.json"]
 exclude = ["**"]
+
+[dev-dependencies]
+Jest = "jsdotlua/jest@3.10.0"
+JestGlobals = "jsdotlua/jest-globals@3.10.0"

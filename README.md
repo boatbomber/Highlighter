@@ -1,31 +1,30 @@
 # Highlighter
 
-RichText highlighting Lua code with a pure Lua lexer
+Highlighter renders syntax highlighted Luau code in Roblox using RichText and a pure Luau lexer.
 
 ## Installation
 
-Wally:
+### Wally
 
 ```toml
 [dependencies]
 Highlighter = "boatbomber/highlighter@0.10.0"
 ```
 
-Roblox Model:
+### Roblox model
 
-Download from [Releases](https://github.com/boatbomber/Highlighter/releases)
+You can download a model file from the [Releases](https://github.com/boatbomber/Highlighter/releases) page.
 
 ## API
 
-**Functions:**
+### Functions
 
 ```Lua
 function Highlighter.highlight(props: types.HighlightProps): () -> ()
 ```
 
 Highlights the given textObject with the given props and returns a cleanup function.
-Highlighting will automatically update when needed, so the cleanup function will disconnect
-those connections and remove all labels.
+Highlighting will automatically update when needed, so the cleanup function will disconnect those connections and remove all labels.
 
 ```Lua
 function Highlighter.buildRichTextLines(props: types.BuildRichTextLinesProps): { string }
@@ -59,7 +58,18 @@ function Highlighter.matchStudioSettings(): ()
 Matches the token colors to the Studio theme settings and refreshes all highlighted textObjects.
 Does nothing when not run in a Studio plugin.
 
-**Types:**
+### Properties
+
+```Lua
+Highlighter.defaultLexer: Lexer
+```
+
+The read-only built-in Luau lexer, used whenever props don't provide one. Assigning to `Highlighter.defaultLexer` is not supported, it is read-only.
+Its scanning flow is documented in [docs/lexer.md](docs/lexer.md).
+Its `navigator` factory is what lets `highlight` reuse cached tokens across edits, so typing near the end of a source only rescans and rebuilds the tail lines.
+A custom lexer without one still works and pays a full scan per update, and a navigator missing any part of the `TokenNavigator` contract is ignored the same way rather than crashing.
+
+### Types
 
 ```Lua
 type TextObject = TextLabel | TextBox
@@ -69,6 +79,7 @@ type TokenName =
     | "iden"
     | "keyword"
     | "builtin"
+    | "type"
     | "string"
     | "number"
     | "comment"
@@ -76,15 +87,7 @@ type TokenName =
     | "custom"
 
 type TokenColors = {
-    ["background"]: Color3?,
-    ["iden"]: Color3?,
-    ["keyword"]: Color3?,
-    ["builtin"]: Color3?,
-    ["string"]: Color3?,
-    ["number"]: Color3?,
-    ["comment"]: Color3?,
-    ["operator"]: Color3?,
-    ["custom"]: Color3?,
+    [TokenName]: Color3?,
 }
 
 type HighlightProps = {
@@ -96,28 +99,43 @@ type HighlightProps = {
 }
 
 type BuildRichTextLinesProps = {
- src: string,
- lexer: Lexer?,
- customLang: { [string]: string }?,
+    src: string,
+    lexer: Lexer?,
+    customLang: { [string]: string }?,
+}
+
+type TokenNavigator = {
+    SetSource: (self: TokenNavigator, sourceString: string) -> (),
+    HotswapSource: (self: TokenNavigator, sourceString: string) -> number,
+    SeekToByte: (self: TokenNavigator, position: number) -> number,
+    Next: (self: TokenNavigator) -> (string?, string),
+    Destroy: (self: TokenNavigator) -> (),
 }
 
 type Lexer = {
-    scan: (src: string, startIndex: number?) -> () -> (string, string),
-    navigator: () -> any,
-    finished: boolean?,
+    scan: (src: string, startIndex: number?) -> () -> (TokenName?, string),
+    scanEach: ((src: string, onToken: (TokenName, string) -> ()) -> ())?,
+    navigator: (() -> TokenNavigator)?,
 }
 ```
+
+`customLang` is treated as immutable while it is in use by a highlighted TextObject. To change its mappings, pass a new table to `highlight`, or call `highlight` with `forceUpdate = true` after changing the existing table.
 
 ## Simple Example
 
 ```Lua
 local Highlighter = require(script.Highlighter)
 
--- When using in a Studio Plugin, this will automatically match the Studio theme
+-- Inside a Studio plugin, this automatically matches the Studio theme.
 Highlighter.matchStudioSettings()
 
--- Add syntax highlighting to myTextLabel
+-- This adds syntax highlighting to myTextLabel.
 Highlighter.highlight({
-    textObject: myTextLabel,
+    textObject = myTextLabel,
 })
 ```
+
+## Reference
+
+The bundled lexer's scanning flow, state machine, and deliberate deviations from upstream are documented in [docs/lexer.md](docs/lexer.md).
+The native [Luau lexer](https://github.com/luau-lang/luau/blob/master/Ast/src/Lexer.cpp) and [Luau parser](https://github.com/luau-lang/luau/blob/master/Ast/src/Parser.cpp) are useful references for how the language tokenizes.

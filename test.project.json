@@ -1,0 +1,41 @@
+{
+	"name": "HighlighterTest",
+	"tree": {
+		"$className": "DataModel",
+
+		"Workspace": {
+			"$className": "Workspace",
+			"$properties": {
+				"SignalBehavior": "Deferred"
+			}
+		},
+
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+
+			"DevPackages": {
+				"$path": "DevPackages"
+			},
+
+			"Packages": {
+				"$className": "Folder",
+
+				"Highlighter": {
+					"$path": "src"
+				}
+			},
+
+			"TestProject": {
+				"$path": "tests"
+			}
+		},
+
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+
+			"run-tests": {
+				"$path": "scripts/run-tests.server.luau"
+			}
+		}
+	}
+}

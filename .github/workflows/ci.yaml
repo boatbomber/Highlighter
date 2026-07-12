@@ -1,0 +1,23 @@
+# Runs the lint script (selene, stylua, and luau-lsp analyze under both
+# solvers) on every push and pull request. Tests need Roblox Studio, so
+# they stay local.
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint and typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools with rokit
+        uses: CompeyDev/setup-rokit@v0.2.1
+
+      - name: Run lint script
+        run: sh scripts/lint.sh

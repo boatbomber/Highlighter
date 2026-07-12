@@ -1,6 +1,6 @@
 {
-	"name": "Highlighter",
-	"tree": {
-		"$path": "src"
-	}
+  "name": "Highlighter",
+  "tree": {
+    "$path": "src"
+  }
 }
