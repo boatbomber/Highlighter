@@ -6,6 +6,8 @@
 	theme from inside a plugin.
 ]]
 
+local RunService = game:GetService("RunService")
+
 local types = require(script.Parent.types)
 
 -- The canonical token name list, one entry per TokenName. The annotation
@@ -22,24 +24,6 @@ local tokenNames: { types.TokenName } = {
 	"comment",
 	"operator",
 	"custom",
-}
-
--- The Studio script editor color for each token name, read when a plugin
--- mirrors the editor theme. Enum items are plain globals, so building this
--- outside a plugin is safe. The keys stay strings because the canonical list
--- indexes this map with widened iteration elements, and the load check below
--- catches a typo or a missing name.
-local studioStyleGuideColors: { [string]: Enum.StudioStyleGuideColor } = {
-	["background"] = Enum.StudioStyleGuideColor.ScriptBackground,
-	["iden"] = Enum.StudioStyleGuideColor.ScriptText,
-	["keyword"] = Enum.StudioStyleGuideColor.ScriptKeyword,
-	["builtin"] = Enum.StudioStyleGuideColor.ScriptBuiltInFunction,
-	["type"] = Enum.StudioStyleGuideColor.ScriptLuauKeyword,
-	["string"] = Enum.StudioStyleGuideColor.ScriptString,
-	["number"] = Enum.StudioStyleGuideColor.ScriptNumber,
-	["comment"] = Enum.StudioStyleGuideColor.ScriptComment,
-	["operator"] = Enum.StudioStyleGuideColor.ScriptOperator,
-	["custom"] = Enum.StudioStyleGuideColor.ScriptBool,
 }
 
 local Theme = {
@@ -68,8 +52,6 @@ local Theme = {
 for _, tokenName in tokenNames do
 	local color: Color3? = Theme.tokenColors[tokenName]
 	assert(color ~= nil, `Theme.tokenColors is missing an entry for {tokenName}`)
-	local style: Enum.StudioStyleGuideColor? = studioStyleGuideColors[tokenName]
-	assert(style ~= nil, `studioStyleGuideColors is missing an entry for {tokenName}`)
 end
 
 -- Tracks the active Studio theme subscription so repeated calls to
@@ -143,6 +125,10 @@ end
 	only true inside a Studio plugin.
 ]]
 function Theme.matchStudioSettings(refreshCallback: () -> ()): boolean
+	if not RunService:IsStudio() then
+		return false
+	end
+
 	local success = pcall(function()
 		-- Accessing Studio settings errors outside of a Studio plugin,
 		-- so the surrounding pcall silently returns false there.
@@ -150,14 +136,18 @@ function Theme.matchStudioSettings(refreshCallback: () -> ()): boolean
 		local studioTheme = studio.Theme
 
 		local function getTokens(): types.TokenColors
-			-- The build table is keyed by string because the style map's
-			-- iteration widens its keys, and the double cast hands the
-			-- finished table back at the strict public type.
-			local tokens: { [string]: Color3 } = {}
-			for tokenName, style in studioStyleGuideColors do
-				tokens[tokenName] = studioTheme:GetColor(style)
-			end
-			return (tokens :: any) :: types.TokenColors
+			return {
+				["background"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptBackground),
+				["iden"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptText),
+				["keyword"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptKeyword),
+				["builtin"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptBuiltInFunction),
+				["type"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptLuauKeyword),
+				["string"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptString),
+				["number"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptNumber),
+				["comment"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptComment),
+				["operator"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptOperator),
+				["custom"] = studioTheme:GetColor(Enum.StudioStyleGuideColor.ScriptBool),
+			}
 		end
 
 		Theme.setColors(getTokens())

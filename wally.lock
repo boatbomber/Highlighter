@@ -4,7 +4,7 @@ registry = "test"
 
 [[package]]
 name = "boatbomber/highlighter"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [["Jest", "jsdotlua/jest@3.10.0"], ["JestGlobals", "jsdotlua/jest-globals@3.10.0"]]
 
 [[package]]
